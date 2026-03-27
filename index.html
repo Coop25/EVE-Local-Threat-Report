@@ -322,14 +322,10 @@
       }
 
       tbody td:nth-child(4)::before {
-        content: 'zKillboard';
-      }
-
-      tbody td:nth-child(5)::before {
         content: 'Threat';
       }
 
-      tbody td:nth-child(6)::before {
+      tbody td:nth-child(5)::before {
         content: 'Notes';
       }
     }
@@ -342,8 +338,8 @@
       <h1>EVE Local Threat Report</h1>
       <div class="sub">
         Paste one pilot name per line, then pull recent zKillboard activity and flag characters who look dangerous. This
-        tool checks ship and pod kills for the current month plus a selectable number of previous months, and links each
-        pilot directly to their zKillboard profile.
+        tool checks ship and pod kills for the selected month range, can filter by space type using zKill location
+        labels, and caches recent pilot lookups to reduce duplicate requests and help avoid rate limits.
       </div>
     </div>
 
@@ -366,32 +362,40 @@ Random Space Pirate"></textarea>
             </select>
           </div>
           <div>
-            <label>Pages per pilot</label>
-            <input type="text" value="1 (fixed)" disabled />
+            <label for="spaceFilter">Flag kills in</label>
+            <select id="spaceFilter">
+              <option value="all" selected>All space</option>
+              <option value="highsec">Highsec</option>
+              <option value="lowsec">Lowsec</option>
+              <option value="nullsec">Nullsec</option>
+              <option value="wormhole">Wormhole</option>
+            </select>
           </div>
         </div>
 
         <div class="row">
           <div>
-            <label for="highThreatKills">High threat at kills ≥</label>
+            <label for="highThreatKills">High threat kills ≥</label>
             <input id="highThreatKills" type="number" min="1" value="3" />
           </div>
           <div>
-            <label for="highThreatPods">High threat at pod kills ≥</label>
+            <label for="highThreatPods">High threat pod kills ≥</label>
             <input id="highThreatPods" type="number" min="0" value="1" />
           </div>
         </div>
 
         <div class="buttons">
           <button id="analyzeBtn" class="primary">Analyze pilots</button>
-          <button id="sampleBtn" class="secondary">Load sample names</button>
+          <!-- <button id="sampleBtn" class="secondary">Load sample names</button> -->
           <button id="clearBtn" class="secondary">Clear</button>
         </div>
 
         <div id="status" class="status"></div>
         <div class="meta">
-          Tip: keep the page limit low if you are checking a large local list. This version queries zKillboard by
-          calendar month, so it is best for fast threat snapshots rather than exact rolling 60 or 90 day windows.
+          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute,
+          caches the last 50 pilot
+          lookups for 1 hour, and filters kills by the selected space type using zKill location labels before scoring
+          threats.
         </div>
       </div>
 
@@ -406,7 +410,7 @@ Random Space Pirate"></textarea>
             <div class="v" id="sumThreats">0</div>
           </div>
           <div class="stat">
-            <div class="k">Ship kills</div>
+            <div class="k">Filtered kills</div>
             <div class="v" id="sumKills">0</div>
           </div>
           <div class="stat">
@@ -428,7 +432,7 @@ Random Space Pirate"></textarea>
             </thead>
             <tbody id="resultsBody">
               <tr>
-                <td colspan="6" class="note">Results will appear here.</td>
+                <td colspan="5" class="note">Results will appear here.</td>
               </tr>
             </tbody>
           </table>
@@ -443,19 +447,29 @@ Random Space Pirate"></textarea>
     </div>
   </div>
 
+
   <script>
     const CAPSULE_GROUP_ID = 29;
     const ESI_IDS_URL = 'https://esi.evetech.net/latest/universe/ids/';
     const ESI_TYPE_URL = 'https://esi.evetech.net/latest/universe/types/';
     const ZKILL_API_BASE = 'https://zkillboard.com/api';
 
+    const REQUESTS_PER_MINUTE = 50;
+    const REQUEST_INTERVAL_MS = Math.ceil(60000 / REQUESTS_PER_MINUTE);
+    const CACHE_TTL_MS = 60 * 60 * 1000;
+    const CACHE_MAX_ENTRIES = 50;
+
+    document.getElementById("reqPerMin").textContent = REQUESTS_PER_MINUTE;
+
+    const SPACE_KEYS = ['all', 'highsec', 'lowsec', 'nullsec', 'wormhole'];
+
     const namesEl = document.getElementById('names');
     const monthsBackEl = document.getElementById('monthsBack');
-    // maxPages removed (fixed to 1)
     const highThreatKillsEl = document.getElementById('highThreatKills');
     const highThreatPodsEl = document.getElementById('highThreatPods');
+    const spaceFilterEl = document.getElementById('spaceFilter');
     const analyzeBtn = document.getElementById('analyzeBtn');
-    const sampleBtn = document.getElementById('sampleBtn');
+    // const sampleBtn = document.getElementById('sampleBtn');
     const clearBtn = document.getElementById('clearBtn');
     const statusEl = document.getElementById('status');
     const resultsBody = document.getElementById('resultsBody');
@@ -466,7 +480,10 @@ Random Space Pirate"></textarea>
     const sumPods = document.getElementById('sumPods');
 
     const typeCache = new Map();
-    const pilotResultCache = new Map();
+    const pilotSummaryCache = new Map();
+    const requestQueueState = {
+      nextAvailableAt: 0
+    };
 
     function setStatus(message) {
       statusEl.textContent = message;
@@ -474,6 +491,15 @@ Random Space Pirate"></textarea>
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function waitForRequestSlot() {
+      const now = Date.now();
+      const waitMs = Math.max(0, requestQueueState.nextAvailableAt - now);
+      if (waitMs > 0) {
+        await sleep(waitMs);
+      }
+      requestQueueState.nextAvailableAt = Math.max(requestQueueState.nextAvailableAt, Date.now()) + REQUEST_INTERVAL_MS;
     }
 
     function normalizeNames(raw) {
@@ -485,26 +511,31 @@ Random Space Pirate"></textarea>
       )];
     }
 
-    function buildCacheKey(name, monthsBack, maxPages, highThreatKills, highThreatPods) {
-      return JSON.stringify({ name, monthsBack, maxPages, highThreatKills, highThreatPods });
-    }
-
-    function prunePilotCache(activeNames) {
-      const activeNameSet = new Set(activeNames.map(name => name.toLowerCase()));
-      for (const key of pilotResultCache.keys()) {
-        try {
-          const parsed = JSON.parse(key);
-          if (!activeNameSet.has(String(parsed.name || '').toLowerCase())) {
-            pilotResultCache.delete(key);
-          }
-        } catch {
-          pilotResultCache.delete(key);
+    function getRetryDelayMs(response, attempt) {
+      const retryAfter = response.headers.get('Retry-After');
+      if (retryAfter) {
+        const seconds = Number(retryAfter);
+        if (!Number.isNaN(seconds)) {
+          return Math.max(seconds * 1000, 10000);
         }
       }
+
+      const jitter = Math.floor(Math.random() * 1000);
+      return 10000 * Math.pow(2, attempt) + jitter;
     }
 
-    async function fetchJson(url, options = {}) {
+    async function fetchJson(url, options = {}, attempt = 0) {
+      await waitForRequestSlot();
+
       const response = await fetch(url, options);
+      if (response.status === 429 && attempt < 5) {
+        const delayMs = getRetryDelayMs(response, attempt);
+        requestQueueState.nextAvailableAt = Math.max(requestQueueState.nextAvailableAt, Date.now() + delayMs);
+        setStatus(`Rate limited. Cooling down for ${Math.ceil(delayMs / 1000)}s...`);
+        await sleep(delayMs);
+        return fetchJson(url, options, attempt + 1);
+      }
+
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         throw new Error(`${response.status} ${response.statusText} - ${text.slice(0, 180)}`);
@@ -512,15 +543,73 @@ Random Space Pirate"></textarea>
       return response.json();
     }
 
+    function touchPilotCacheEntry(cacheKey) {
+      const existing = pilotSummaryCache.get(cacheKey);
+      if (!existing) return;
+      pilotSummaryCache.delete(cacheKey);
+      pilotSummaryCache.set(cacheKey, existing);
+    }
+
+    function evictOldestPilotCacheEntries() {
+      while (pilotSummaryCache.size > CACHE_MAX_ENTRIES) {
+        const oldestKey = pilotSummaryCache.keys().next().value;
+        if (oldestKey === undefined) break;
+        pilotSummaryCache.delete(oldestKey);
+      }
+    }
+
+    function prunePilotCache() {
+      const now = Date.now();
+      for (const [key, entry] of pilotSummaryCache.entries()) {
+        if (!entry || !entry.cachedAt || (now - entry.cachedAt) > CACHE_TTL_MS) {
+          pilotSummaryCache.delete(key);
+        }
+      }
+      evictOldestPilotCacheEntries();
+    }
+
+    function buildPilotCacheKey(name) {
+      return String(name || '').trim().toLowerCase();
+    }
+
+    function makeEmptyCounts() {
+      return {
+        all: { kills: 0, pods: 0 },
+        highsec: { kills: 0, pods: 0 },
+        lowsec: { kills: 0, pods: 0 },
+        nullsec: { kills: 0, pods: 0 },
+        wormhole: { kills: 0, pods: 0 }
+      };
+    }
+
+    function getMonthKey(year, month) {
+      return `${year}-${String(month).padStart(2, '0')}`;
+    }
+
+    function getNeededMonths(monthsBack) {
+      const requests = [];
+      const now = new Date();
+
+      for (let offset = 0; offset <= monthsBack; offset++) {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+        requests.push({
+          year: d.getUTCFullYear(),
+          month: d.getUTCMonth() + 1,
+          monthKey: getMonthKey(d.getUTCFullYear(), d.getUTCMonth() + 1)
+        });
+      }
+
+      return requests;
+    }
+
     async function resolveCharacterIds(names) {
-      const payload = JSON.stringify(names);
       const data = await fetchJson(ESI_IDS_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: payload
+        body: JSON.stringify(names)
       });
 
       const byName = new Map();
@@ -546,45 +635,52 @@ Random Space Pirate"></textarea>
     async function isPodKill(victimShipTypeId) {
       if (!victimShipTypeId) return false;
       const typeInfo = await getTypeInfo(victimShipTypeId);
-      return typeInfo?.group_id === CAPSULE_GROUP_ID;
+      return Boolean(typeInfo && typeInfo.group_id === CAPSULE_GROUP_ID);
     }
 
-    function getMonthRequests(monthsBack) {
-      const requests = [];
-      const now = new Date();
+    function classifyKillSpace(kill) {
+      const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
+      const flags = { all: true };
 
-      for (let offset = 0; offset <= monthsBack; offset++) {
-        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
-        requests.push({
-          year: d.getUTCFullYear(),
-          month: d.getUTCMonth() + 1
-        });
+      for (const label of labels) {
+        if (label === 'loc:highsec') {
+          flags.highsec = true;
+          return flags;
+        }
+        if (label === 'loc:lowsec') {
+          flags.lowsec = true;
+          return flags;
+        }
+        if (label === 'loc:nullsec') {
+          flags.nullsec = true;
+          return flags;
+        }
+        if (label === 'loc:w-space') {
+          flags.wormhole = true;
+          return flags;
+        }
       }
 
-      return requests;
+      return flags;
     }
 
-    async function fetchCharacterKills(characterId, monthsBack, maxPages) {
+    async function fetchCharacterKillsForMonth(characterId, year, month, maxPages = 1) {
       const allKills = [];
-      const monthRequests = getMonthRequests(monthsBack);
 
-      for (const req of monthRequests) {
-        for (let page = 1; page <= maxPages; page++) {
-          const url = `${ZKILL_API_BASE}/kills/characterID/${characterId}/year/${req.year}/month/${req.month}/page/${page}/`;
-          const pageData = await fetchJson(url, {
-            headers: {
-              'Accept': 'application/json',
-              'Accept-Encoding': 'gzip',
-              'User-Agent': 'EVE Local Threat Report'
-            }
-          });
+      for (let page = 1; page <= maxPages; page++) {
+        const url = `${ZKILL_API_BASE}/kills/characterID/${characterId}/year/${year}/month/${month}/page/${page}/`;
+        const pageData = await fetchJson(url, {
+          headers: {
+            'Accept': 'application/json',
+            'Accept-Encoding': 'gzip',
+            'User-Agent': 'EVE Local Threat Report'
+          }
+        });
 
-          if (!Array.isArray(pageData) || pageData.length === 0) break;
-          allKills.push(...pageData);
+        if (!Array.isArray(pageData) || pageData.length === 0) break;
+        allKills.push(...pageData);
 
-          if (pageData.length < 200) break;
-          await sleep(225);
-        }
+        if (pageData.length < 200) break;
       }
 
       const seen = new Set();
@@ -599,60 +695,129 @@ Random Space Pirate"></textarea>
       });
     }
 
-    async function summarizePilot(pilot, monthsBack, maxPages, thresholds) {
-      if (!pilot.characterId) {
-        return {
-          name: pilot.name,
-          found: false,
-          characterId: null,
-          kills: 0,
-          podKills: 0,
-          zkillUrl: '#',
-          threat: 'low',
-          notes: 'Character name could not be resolved in ESI.'
-        };
-      }
-
-      const kills = await fetchCharacterKills(pilot.characterId, monthsBack, maxPages);
-      let podKills = 0;
-
-      const uniqueVictimTypeIds = [...new Set(kills.map(k => k.victim?.ship_type_id).filter(Boolean))];
-      for (const typeId of uniqueVictimTypeIds) {
-        await getTypeInfo(typeId);
-        await sleep(50);
-      }
+    async function summarizeKillsForMonth(kills) {
+      const counts = makeEmptyCounts();
 
       for (const kill of kills) {
-        const victimShipTypeId = kill.victim?.ship_type_id;
-        if (await isPodKill(victimShipTypeId)) {
-          podKills++;
+        const victimShipTypeId = kill.victim && kill.victim.ship_type_id ? kill.victim.ship_type_id : null;
+        const isPod = await isPodKill(victimShipTypeId);
+        const spaceFlags = await classifyKillSpace(kill);
+
+        for (const key of SPACE_KEYS) {
+          if (spaceFlags[key]) {
+            counts[key].kills += 1;
+            if (isPod) {
+              counts[key].pods += 1;
+            }
+          }
         }
       }
 
-      let threat = 'low';
-      let notes = 'Low recent kill activity in selected month range.';
+      return counts;
+    }
 
-      if (kills.length >= thresholds.highThreatKills || podKills >= thresholds.highThreatPods) {
+    function ensurePilotCacheEntry(pilot) {
+      const cacheKey = buildPilotCacheKey(pilot.name);
+      let entry = pilotSummaryCache.get(cacheKey);
+
+      if (!entry) {
+        entry = {
+          cachedAt: Date.now(),
+          name: pilot.name,
+          characterId: pilot.characterId || null,
+          zkillUrl: pilot.characterId ? `https://zkillboard.com/character/${pilot.characterId}/` : '#',
+          months: {}
+        };
+        pilotSummaryCache.set(cacheKey, entry);
+      } else {
+        entry.cachedAt = Date.now();
+        entry.name = pilot.name;
+        entry.characterId = pilot.characterId || entry.characterId || null;
+        entry.zkillUrl = entry.characterId ? `https://zkillboard.com/character/${entry.characterId}/` : '#';
+      }
+
+      touchPilotCacheEntry(cacheKey);
+      evictOldestPilotCacheEntries();
+      return entry;
+    }
+
+    async function ensurePilotMonthsCached(pilot, monthsBack, pilotCounts) {
+      const cacheKey = buildPilotCacheKey(pilot.name);
+      const existing = pilotSummaryCache.get(cacheKey);
+      const cacheExpired = !existing || !existing.cachedAt || (Date.now() - existing.cachedAt) > CACHE_TTL_MS;
+
+      if (cacheExpired && existing) {
+        pilotSummaryCache.delete(cacheKey);
+      }
+
+      const entry = ensurePilotCacheEntry(pilot);
+
+      if (!pilot.characterId) {
+        return entry;
+      }
+
+      const neededMonths = getNeededMonths(monthsBack);
+      const missingMonths = neededMonths.filter(m => !entry.months[m.monthKey]);
+
+      if (missingMonths.length === 0) {
+        return entry;
+      }
+
+      for (let i = 0; i < missingMonths.length; i++) {
+        const monthInfo = missingMonths[i];
+        setStatus(`Pilot ${pilotCounts} Checking ${pilot.name} (${i + 1}/${missingMonths.length} month(s) needed)... pacing requests to about ${REQUESTS_PER_MINUTE} per minute.`);
+        const kills = await fetchCharacterKillsForMonth(pilot.characterId, monthInfo.year, monthInfo.month, 1);
+        const counts = await summarizeKillsForMonth(kills);
+        entry.months[monthInfo.monthKey] = counts;
+        entry.cachedAt = Date.now();
+      }
+
+      touchPilotCacheEntry(cacheKey);
+      evictOldestPilotCacheEntries();
+      return entry;
+    }
+
+    function getCountsForMonths(entry, monthsBack, spaceFilter) {
+      const totals = { kills: 0, pods: 0 };
+      const neededMonths = getNeededMonths(monthsBack);
+
+      for (const monthInfo of neededMonths) {
+        const monthCounts = entry.months[monthInfo.monthKey];
+        if (!monthCounts) continue;
+        const bucket = monthCounts[spaceFilter] || { kills: 0, pods: 0 };
+        totals.kills += Number(bucket.kills || 0);
+        totals.pods += Number(bucket.pods || 0);
+      }
+
+      return totals;
+    }
+
+    function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter) {
+      const counts = getCountsForMonths(entry, monthsBack, spaceFilter);
+      let threat = 'low';
+      let notes = `Low recent kill activity in selected month range (${spaceFilter}).`;
+
+      if (counts.kills >= thresholds.highThreatKills || counts.pods >= thresholds.highThreatPods) {
         threat = 'high';
-        notes = podKills >= thresholds.highThreatPods
-          ? 'Recent podding activity stands out.'
-          : 'High recent PvP kill count in selected month range.';
-      } else if (kills.length >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || podKills >= 1) {
+        notes = counts.pods >= thresholds.highThreatPods
+          ? `Recent podding activity stands out in ${spaceFilter}.`
+          : `High recent PvP kill count in ${spaceFilter}.`;
+      } else if (counts.kills >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || counts.pods >= 1) {
         threat = 'medium';
-        notes = podKills > 0
-          ? 'Recent pod kill(s) detected.'
-          : 'Noticeable recent PvP activity in selected month range.';
+        notes = counts.pods > 0
+          ? `Recent pod kill(s) detected in ${spaceFilter}.`
+          : `Noticeable recent PvP activity in ${spaceFilter}.`;
       }
 
       return {
-        name: pilot.name,
-        found: true,
-        characterId: pilot.characterId,
-        kills: kills.length,
-        podKills,
-        zkillUrl: `https://zkillboard.com/character/${pilot.characterId}/`,
+        name: entry.name,
+        found: Boolean(entry.characterId),
+        characterId: entry.characterId,
+        kills: counts.kills,
+        podKills: counts.pods,
+        zkillUrl: entry.zkillUrl || '#',
         threat,
-        notes
+        notes: entry.characterId ? notes : 'Character name could not be resolved in ESI.'
       };
     }
 
@@ -661,13 +826,9 @@ Random Space Pirate"></textarea>
       return `<span class="pill ${cls}">${threat.toUpperCase()}</span>`;
     }
 
-    function formatDate(value) {
-      return value || '—';
-    }
-
     function renderResults(rows) {
       if (!rows.length) {
-        resultsBody.innerHTML = `<tr><td colspan="6" class="note">No results to show.</td></tr>`;
+        resultsBody.innerHTML = `<tr><td colspan="5" class="note">No results to show.</td></tr>`;
         return;
       }
 
@@ -703,15 +864,65 @@ Random Space Pirate"></textarea>
         .replaceAll("'", '&#39;');
     }
 
-    async function analyze() {
+    async function collectResultsFromCurrentInputs(showProgress = true) {
       const names = normalizeNames(namesEl.value);
       if (!names.length) {
-        setStatus('Paste at least one pilot name first.');
+        renderResults([]);
+        sumPilots.textContent = '0';
+        sumThreats.textContent = '0';
+        sumKills.textContent = '0';
+        sumPods.textContent = '0';
+        if (showProgress) {
+          setStatus('Paste at least one pilot name first.');
+        }
         return;
       }
 
+      const monthsBack = Number(monthsBackEl.value);
+      const thresholds = {
+        highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
+        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
+      };
+      const spaceFilter = spaceFilterEl.value;
+
+      prunePilotCache();
+      if (showProgress) {
+        setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
+      }
+      const pilots = await resolveCharacterIds(names);
+
+      const results = [];
+      let reusedFullyCached = 0;
+      let fetchedNewMonthBuckets = 0;
+
+      for (let index = 0; index < pilots.length; index++) {
+        const pilot = pilots[index];
+        const cacheKey = buildPilotCacheKey(pilot.name);
+        const existing = pilotSummaryCache.get(cacheKey);
+        const beforeMonths = existing ? Object.keys(existing.months || {}).length : 0;
+
+        const entry = await ensurePilotMonthsCached(pilot, monthsBack, `${index + 1}/${pilots.length}`);
+
+        const afterMonths = Object.keys(entry.months || {}).length;
+        if (afterMonths > beforeMonths) {
+          fetchedNewMonthBuckets += (afterMonths - beforeMonths);
+        } else {
+          reusedFullyCached += 1;
+        }
+
+        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter));
+        renderResults(results);
+      }
+
+      const unresolved = results.filter(r => !r.found).length;
+      if (showProgress) {
+        setStatus(`Done. ${results.length} pilot(s) shown. ${reusedFullyCached} pilot cache hit(s). ${fetchedNewMonthBuckets} new month bucket(s) fetched.${unresolved ? ` ${unresolved} name(s) could not be resolved.` : ''}`);
+      }
+    }
+
+    async function analyze() {
       analyzeBtn.disabled = true;
-      sampleBtn.disabled = true;
+      // sampleBtn.disabled = true;
       clearBtn.disabled = true;
       renderResults([]);
       sumPilots.textContent = '0';
@@ -719,80 +930,81 @@ Random Space Pirate"></textarea>
       sumKills.textContent = '0';
       sumPods.textContent = '0';
 
-      const monthsBack = Number(monthsBackEl.value);
-      const maxPages = 1; // fixed to avoid rate limiting
-      const thresholds = {
-        highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
-        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
-      };
-
       try {
-        prunePilotCache(names);
-        setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
-        const pilots = await resolveCharacterIds(names);
-
-        const results = [];
-        for (let i = 0; i < pilots.length; i++) {
-          const pilot = pilots[i];
-          const cacheKey = buildCacheKey(
-            pilot.name,
-            monthsBack,
-            maxPages,
-            thresholds.highThreatKills,
-            thresholds.highThreatPods
-          );
-
-          if (pilotResultCache.has(cacheKey)) {
-            results.push(pilotResultCache.get(cacheKey));
-            renderResults(results);
-            setStatus(`Using cached result for ${pilot.name} (${i + 1}/${pilots.length})...`);
-            continue;
-          }
-
-          setStatus(`Checking ${pilot.name} (${i + 1}/${pilots.length})...`);
-          const result = await summarizePilot(pilot, monthsBack, maxPages, thresholds);
-          pilotResultCache.set(cacheKey, result);
-          results.push(result);
-          renderResults(results);
-          await sleep(275);
-        }
-
-        const unresolved = results.filter(r => !r.found).length;
-        const cachedCount = results.filter(r => {
-          const cacheKey = buildCacheKey(
-            r.name,
-            monthsBack,
-            maxPages,
-            thresholds.highThreatKills,
-            thresholds.highThreatPods
-          );
-          return pilotResultCache.has(cacheKey);
-        }).length;
-        setStatus(`Done. ${results.length} pilot(s) shown. ${cachedCount} cached result(s) available for this pasted list.${unresolved ? ` ${unresolved} name(s) could not be resolved.` : ''}`);
+        await collectResultsFromCurrentInputs(true);
       } catch (error) {
         console.error(error);
         setStatus(`Error: ${error.message}`);
       } finally {
         analyzeBtn.disabled = false;
-        sampleBtn.disabled = false;
+        // sampleBtn.disabled = false;
         clearBtn.disabled = false;
       }
     }
 
-    namesEl.addEventListener('input', () => {
+    function rerenderFromCacheOnly() {
       const names = normalizeNames(namesEl.value);
-      prunePilotCache(names);
+      if (!names.length) {
+        renderResults([]);
+        sumPilots.textContent = '0';
+        sumThreats.textContent = '0';
+        sumKills.textContent = '0';
+        sumPods.textContent = '0';
+        return;
+      }
+
+      const monthsBack = Number(monthsBackEl.value);
+      const thresholds = {
+        highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
+        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
+      };
+      const spaceFilter = spaceFilterEl.value;
+
+      const results = [];
+      for (const name of names) {
+        const entry = pilotSummaryCache.get(buildPilotCacheKey(name));
+        if (!entry) continue;
+        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter));
+      }
+
+      if (results.length > 0) {
+        renderResults(results);
+        setStatus('Updated view from cached month summaries.');
+      }
+    }
+
+    namesEl.addEventListener('input', () => {
+      prunePilotCache();
+    });
+
+    monthsBackEl.addEventListener('change', () => {
+      rerenderFromCacheOnly();
+    });
+
+    highThreatKillsEl.addEventListener('input', () => {
+      rerenderFromCacheOnly();
+    });
+
+    highThreatPodsEl.addEventListener('input', () => {
+      rerenderFromCacheOnly();
+    });
+
+    spaceFilterEl.addEventListener('change', () => {
+      rerenderFromCacheOnly();
     });
 
     analyzeBtn.addEventListener('click', analyze);
-    sampleBtn.addEventListener('click', () => {
-      namesEl.value = ['Chribba', 'Auraus Porcaleus', 'CCP Convict'].join('\n');
-      setStatus('Loaded sample names.');
-    });
+
+    // sampleBtn.addEventListener('click', () => {
+    //   namesEl.value = ['Chribba', 'Auraus Porcaleus', 'CCP Convict'].join('\n');
+    //   setStatus('Loaded sample names.');
+    //   rerenderFromCacheOnly();
+    // });
+
     clearBtn.addEventListener('click', () => {
       namesEl.value = '';
       setStatus('');
-      pilotResultCache.clear();
+      pilotSummaryCache.clear();
       renderResults([]);
       sumPilots.textContent = '0';
       sumThreats.textContent = '0';
@@ -800,6 +1012,7 @@ Random Space Pirate"></textarea>
       sumPods.textContent = '0';
     });
   </script>
+
 </body>
 
 </html>
