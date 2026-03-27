@@ -184,6 +184,7 @@
     }
 
     table {
+      text-align: center;
       width: 100%;
       border-collapse: collapse;
       overflow: hidden;
@@ -357,8 +358,9 @@ Random Space Pirate"></textarea>
           <div>
             <label for="monthsBack">Activity window</label>
             <select id="monthsBack">
-              <option value="2">Previous 2 months</option>
-              <option value="3" selected>Previous 3 months</option>
+              <option value="1">1 month ago</option>
+              <option value="2">2 months ago</option>
+              <option value="3" selected>3 months ago</option>
             </select>
           </div>
           <div>
@@ -440,8 +442,9 @@ Random Space Pirate"></textarea>
 
         <div class="note">
           Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
-          activity or pod kill count crosses your thresholds, <strong>medium</strong> if they still show notable recent
-          PvP activity, and <strong>low</strong> if they show little or no recent kill activity in the chosen window.
+          activity or pod kill count crosses your thresholds, <strong>medium</strong> if they have any recent activity
+          but stay below those thresholds, and <strong>low</strong> if they show no recent kill activity in the chosen
+          window.
         </div>
       </div>
     </div>
@@ -795,18 +798,18 @@ Random Space Pirate"></textarea>
     function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter) {
       const counts = getCountsForMonths(entry, monthsBack, spaceFilter);
       let threat = 'low';
-      let notes = `Low recent kill activity in selected month range (${spaceFilter}).`;
+      let notes = `No recent kill activity in selected month range (${spaceFilter}).`;
 
       if (counts.kills >= thresholds.highThreatKills || counts.pods >= thresholds.highThreatPods) {
         threat = 'high';
         notes = counts.pods >= thresholds.highThreatPods
           ? `Recent podding activity stands out in ${spaceFilter}.`
           : `High recent PvP kill count in ${spaceFilter}.`;
-      } else if (counts.kills >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || counts.pods >= 1) {
+      } else if (counts.kills > 0 || counts.pods > 0) {
         threat = 'medium';
         notes = counts.pods > 0
-          ? `Recent pod kill(s) detected in ${spaceFilter}.`
-          : `Noticeable recent PvP activity in ${spaceFilter}.`;
+          ? `Recent activity detected in ${spaceFilter}, but below the high-threat threshold.`
+          : `Recent kills detected in ${spaceFilter}, but below the high-threat threshold.`;
       }
 
       return {
