@@ -184,7 +184,6 @@
     }
 
     table {
-      text-align: center;
       width: 100%;
       border-collapse: collapse;
       overflow: hidden;
@@ -228,7 +227,7 @@
       border-color: rgba(31, 157, 106, .35);
     }
 
-    .medium {
+    .warning {
       color: #ffe4ad;
       background: rgba(199, 139, 25, .16);
       border-color: rgba(199, 139, 25, .35);
@@ -358,9 +357,8 @@ Random Space Pirate"></textarea>
           <div>
             <label for="monthsBack">Activity window</label>
             <select id="monthsBack">
-              <option value="1">1 month ago</option>
-              <option value="2">2 months ago</option>
-              <option value="3" selected>3 months ago</option>
+              <option value="2">Previous 2 months</option>
+              <option value="3" selected>Previous 3 months</option>
             </select>
           </div>
           <div>
@@ -388,11 +386,13 @@ Random Space Pirate"></textarea>
 
         <div class="buttons">
           <button id="analyzeBtn" class="primary">Analyze pilots</button>
+          <button id="shareBtn" class="secondary">Share this scan</button>
           <!-- <button id="sampleBtn" class="secondary">Load sample names</button> -->
           <button id="clearBtn" class="secondary">Clear</button>
         </div>
 
         <div id="status" class="status"></div>
+        <div id="shareStatus" class="meta"></div>
         <div class="meta">
           Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute,
           caches the last 50 pilot
@@ -442,9 +442,8 @@ Random Space Pirate"></textarea>
 
         <div class="note">
           Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
-          activity or pod kill count crosses your thresholds, <strong>medium</strong> if they have any recent activity
-          but stay below those thresholds, and <strong>low</strong> if they show no recent kill activity in the chosen
-          window.
+          activity or pod kill count crosses your thresholds, <strong>warning</strong> if they still show notable recent
+          PvP activity, and <strong>low</strong> if they show little or no recent kill activity in the chosen window.
         </div>
       </div>
     </div>
@@ -472,9 +471,11 @@ Random Space Pirate"></textarea>
     const highThreatPodsEl = document.getElementById('highThreatPods');
     const spaceFilterEl = document.getElementById('spaceFilter');
     const analyzeBtn = document.getElementById('analyzeBtn');
+    const shareBtn = document.getElementById('shareBtn');
     // const sampleBtn = document.getElementById('sampleBtn');
     const clearBtn = document.getElementById('clearBtn');
     const statusEl = document.getElementById('status');
+    const shareStatusEl = document.getElementById('shareStatus');
     const resultsBody = document.getElementById('resultsBody');
 
     const sumPilots = document.getElementById('sumPilots');
@@ -490,6 +491,12 @@ Random Space Pirate"></textarea>
 
     function setStatus(message) {
       statusEl.textContent = message;
+    }
+
+    function setShareStatus(message) {
+      if (shareStatusEl) {
+        shareStatusEl.textContent = message;
+      }
     }
 
     function sleep(ms) {
@@ -798,18 +805,18 @@ Random Space Pirate"></textarea>
     function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter) {
       const counts = getCountsForMonths(entry, monthsBack, spaceFilter);
       let threat = 'low';
-      let notes = `No recent kill activity in selected month range (${spaceFilter}).`;
+      let notes = `Low recent kill activity in selected month range (${spaceFilter}).`;
 
       if (counts.kills >= thresholds.highThreatKills || counts.pods >= thresholds.highThreatPods) {
         threat = 'high';
         notes = counts.pods >= thresholds.highThreatPods
           ? `Recent podding activity stands out in ${spaceFilter}.`
           : `High recent PvP kill count in ${spaceFilter}.`;
-      } else if (counts.kills > 0 || counts.pods > 0) {
-        threat = 'medium';
+      } else if (counts.kills >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || counts.pods >= 1) {
+        threat = 'warning';
         notes = counts.pods > 0
-          ? `Recent activity detected in ${spaceFilter}, but below the high-threat threshold.`
-          : `Recent kills detected in ${spaceFilter}, but below the high-threat threshold.`;
+          ? `Recent pod kill(s) detected in ${spaceFilter}.`
+          : `Noticeable recent PvP activity in ${spaceFilter}.`;
       }
 
       return {
@@ -825,7 +832,7 @@ Random Space Pirate"></textarea>
     }
 
     function threatPill(threat) {
-      const cls = threat === 'high' ? 'high' : threat === 'medium' ? 'medium' : 'low';
+      const cls = threat === 'high' ? 'high' : threat === 'warning' ? 'warning' : 'low';
       return `<span class="pill ${cls}">${threat.toUpperCase()}</span>`;
     }
 
@@ -836,7 +843,7 @@ Random Space Pirate"></textarea>
       }
 
       const sorted = [...rows].sort((a, b) => {
-        const threatRank = { high: 2, medium: 1, low: 0 };
+        const threatRank = { high: 2, warning: 1, low: 0 };
         if (threatRank[b.threat] !== threatRank[a.threat]) return threatRank[b.threat] - threatRank[a.threat];
         if (b.kills !== a.kills) return b.kills - a.kills;
         return b.podKills - a.podKills;
@@ -865,6 +872,188 @@ Random Space Pirate"></textarea>
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+    }
+
+
+    function getShortMonthKey(monthKey) {
+      const [year, month] = String(monthKey).split('-');
+      return `${String(year).slice(2)}-${Number(month)}`;
+    }
+
+    function expandShortMonthKey(shortKey) {
+      const [yy, month] = String(shortKey).split('-');
+      return `20${String(yy).padStart(2, '0')}-${String(month).padStart(2, '0')}`;
+    }
+
+    function base64UrlEncode(str) {
+      return btoa(unescape(encodeURIComponent(str)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+    }
+
+    function base64UrlDecode(str) {
+      let value = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+      const pad = value.length % 4;
+      if (pad) {
+        value += '='.repeat(4 - pad);
+      }
+      return decodeURIComponent(escape(atob(value)));
+    }
+
+    function encodeMonthBuckets(months) {
+      const keys = Object.keys(months || {}).sort().reverse();
+      return keys.map(monthKey => {
+        const data = months[monthKey] || makeEmptyCounts();
+        return [
+          getShortMonthKey(monthKey),
+          data.all.kills, data.all.pods,
+          data.highsec.kills, data.highsec.pods,
+          data.lowsec.kills, data.lowsec.pods,
+          data.nullsec.kills, data.nullsec.pods,
+          data.wormhole.kills, data.wormhole.pods
+        ].join(',');
+      }).join('|');
+    }
+
+    function decodeMonthBuckets(str) {
+      const months = {};
+      if (!str) return months;
+
+      for (const rawEntry of String(str).split('|')) {
+        if (!rawEntry) continue;
+        const parts = rawEntry.split(',');
+        if (parts.length < 11) continue;
+
+        const monthKey = expandShortMonthKey(parts[0]);
+        const nums = parts.slice(1).map(v => Number(v) || 0);
+
+        months[monthKey] = {
+          all: { kills: nums[0], pods: nums[1] },
+          highsec: { kills: nums[2], pods: nums[3] },
+          lowsec: { kills: nums[4], pods: nums[5] },
+          nullsec: { kills: nums[6], pods: nums[7] },
+          wormhole: { kills: nums[8], pods: nums[9] }
+        };
+      }
+
+      return months;
+    }
+
+    function serializePilotEntry(entry) {
+      return [
+        encodeURIComponent(entry.name || ''),
+        entry.characterId || '',
+        encodeMonthBuckets(entry.months || {})
+      ].join('~');
+    }
+
+    function deserializePilotEntry(serialized) {
+      const firstSep = serialized.indexOf('~');
+      const secondSep = serialized.indexOf('~', firstSep + 1);
+      if (firstSep === -1 || secondSep === -1) return null;
+
+      const encodedName = serialized.slice(0, firstSep);
+      const charIdPart = serialized.slice(firstSep + 1, secondSep);
+      const monthsPart = serialized.slice(secondSep + 1);
+
+      const name = decodeURIComponent(encodedName || '');
+      const characterId = charIdPart ? Number(charIdPart) : null;
+
+      return {
+        cachedAt: Date.now(),
+        name,
+        characterId: Number.isFinite(characterId) ? characterId : null,
+        zkillUrl: characterId ? `https://zkillboard.com/character/${characterId}/` : '#',
+        months: decodeMonthBuckets(monthsPart)
+      };
+    }
+
+    function buildSharePayloadFromCurrentView() {
+      const names = normalizeNames(namesEl.value);
+      if (!names.length) return '';
+
+      const pilots = [];
+      for (const name of names) {
+        const entry = pilotSummaryCache.get(buildPilotCacheKey(name));
+        if (!entry) continue;
+        pilots.push(serializePilotEntry(entry));
+      }
+
+      if (!pilots.length) return '';
+
+      const settings = [
+        `m=${encodeURIComponent(monthsBackEl.value)}`,
+        `s=${encodeURIComponent(spaceFilterEl.value)}`,
+        `k=${encodeURIComponent(highThreatKillsEl.value)}`,
+        `p=${encodeURIComponent(highThreatPodsEl.value)}`
+      ].join('&');
+
+      return base64UrlEncode(`${settings}&d=${pilots.join('!')}`);
+    }
+
+    function loadSharePayloadFromHash() {
+      const hash = String(location.hash || '');
+      if (!hash.startsWith('#scan=')) return false;
+
+      let raw;
+      try {
+        raw = base64UrlDecode(hash.slice(6));
+      } catch (error) {
+        setShareStatus('Could not decode shared scan data from the link.');
+        return false;
+      }
+
+      const params = new URLSearchParams(raw);
+      const monthsBack = params.get('m');
+      const spaceFilter = params.get('s');
+      const highKills = params.get('k');
+      const highPods = params.get('p');
+      const data = params.get('d');
+
+      if (monthsBack) monthsBackEl.value = monthsBack;
+      if (spaceFilter) spaceFilterEl.value = spaceFilter;
+      if (highKills) highThreatKillsEl.value = highKills;
+      if (highPods) highThreatPodsEl.value = highPods;
+
+      if (!data) return false;
+
+      const importedNames = [];
+      for (const piece of data.split('!')) {
+        if (!piece) continue;
+        const entry = deserializePilotEntry(piece);
+        if (!entry || !entry.name) continue;
+        pilotSummaryCache.set(buildPilotCacheKey(entry.name), entry);
+        importedNames.push(entry.name);
+      }
+
+      evictOldestPilotCacheEntries();
+
+      if (importedNames.length) {
+        namesEl.value = importedNames.join('\n');
+        rerenderFromCacheOnly();
+        setShareStatus('Loaded shared scan data from the link.');
+        return true;
+      }
+
+      return false;
+    }
+
+    async function copyShareLink() {
+      const payload = buildSharePayloadFromCurrentView();
+      if (!payload) {
+        setShareStatus('Run a scan first so there is data to share.');
+        return;
+      }
+
+      const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
+
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
+      } catch (error) {
+        setShareStatus(`Could not copy automatically. Use this link: ${shareUrl}`);
+      }
     }
 
     async function collectResultsFromCurrentInputs(showProgress = true) {
@@ -925,6 +1114,7 @@ Random Space Pirate"></textarea>
 
     async function analyze() {
       analyzeBtn.disabled = true;
+      if (shareBtn) shareBtn.disabled = true;
       // sampleBtn.disabled = true;
       clearBtn.disabled = true;
       renderResults([]);
@@ -940,6 +1130,7 @@ Random Space Pirate"></textarea>
         setStatus(`Error: ${error.message}`);
       } finally {
         analyzeBtn.disabled = false;
+        if (shareBtn) shareBtn.disabled = false;
         // sampleBtn.disabled = false;
         clearBtn.disabled = false;
       }
@@ -978,25 +1169,33 @@ Random Space Pirate"></textarea>
 
     namesEl.addEventListener('input', () => {
       prunePilotCache();
+      setShareStatus('');
     });
 
     monthsBackEl.addEventListener('change', () => {
       rerenderFromCacheOnly();
+      setShareStatus('');
     });
 
     highThreatKillsEl.addEventListener('input', () => {
       rerenderFromCacheOnly();
+      setShareStatus('');
     });
 
     highThreatPodsEl.addEventListener('input', () => {
       rerenderFromCacheOnly();
+      setShareStatus('');
     });
 
     spaceFilterEl.addEventListener('change', () => {
       rerenderFromCacheOnly();
+      setShareStatus('');
     });
 
     analyzeBtn.addEventListener('click', analyze);
+    if (shareBtn) {
+      shareBtn.addEventListener('click', copyShareLink);
+    }
 
     // sampleBtn.addEventListener('click', () => {
     //   namesEl.value = ['Chribba', 'Auraus Porcaleus', 'CCP Convict'].join('\n');
@@ -1006,7 +1205,9 @@ Random Space Pirate"></textarea>
 
     clearBtn.addEventListener('click', () => {
       namesEl.value = '';
+      location.hash = '';
       setStatus('');
+      setShareStatus('');
       pilotSummaryCache.clear();
       renderResults([]);
       sumPilots.textContent = '0';
@@ -1014,6 +1215,11 @@ Random Space Pirate"></textarea>
       sumKills.textContent = '0';
       sumPods.textContent = '0';
     });
+    window.addEventListener('hashchange', () => {
+      loadSharePayloadFromHash();
+    });
+
+    loadSharePayloadFromHash();
   </script>
 
 </body>
