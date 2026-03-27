@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVE Local Threat Report</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121933;
+      --panel-2: #192245;
+      --text: #e7ecff;
+      --muted: #9fb0e0;
+      --border: #2d3c71;
+      --good: #1f9d6a;
+      --warn: #c78b19;
+      --bad: #cf4a57;
+      --accent: #6fa8ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #09101d, #0b1020 35%, #0f1730 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+
+    a {
+      color: lightblue;
+    }
+
+    a:hover {
+      color: var(--accent);
+    }
+
+    .sub {
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 900px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+    }
+
+    .card {
+      background: rgba(18, 25, 51, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(4px);
+    }
+
+    label {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+      color: var(--muted);
+    }
+
+    textarea,
+    select,
+    input {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 280px;
+      resize: vertical;
+      line-height: 1.4;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #08111f;
+    }
+
+    .secondary {
+      background: #27345f;
+      color: var(--text);
+    }
+
+    .meta {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.94rem;
+      line-height: 1.5;
+    }
+
+    .status {
+      margin-top: 14px;
+      min-height: 24px;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .stat .k {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+    }
+
+    .stat .v {
+      font-size: 1.6rem;
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 14px;
+    }
+
+    thead th {
+      text-align: left;
+      font-size: 0.9rem;
+      color: var(--muted);
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(25, 34, 69, 0.65);
+      position: sticky;
+      top: 0;
+    }
+
+    tbody td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(45, 60, 113, 0.5);
+      vertical-align: top;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .low {
+      color: #b5f7d9;
+      background: rgba(31, 157, 106, .15);
+      border-color: rgba(31, 157, 106, .35);
+    }
+
+    .medium {
+      color: #ffe4ad;
+      background: rgba(199, 139, 25, .16);
+      border-color: rgba(199, 139, 25, .35);
+    }
+
+    .high {
+      color: #ffc1c7;
+      background: rgba(207, 74, 87, .16);
+      border-color: rgba(207, 74, 87, .35);
+    }
+
+    .note {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 14px;
+      }
+
+      .summary {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      table,
+      thead,
+      tbody,
+      th,
+      td,
+      tr {
+        display: block;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tbody tr {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        margin-bottom: 12px;
+        padding: 8px;
+      }
+
+      tbody td {
+        border: 0;
+        padding: 8px;
+      }
+
+      tbody td::before {
+        display: block;
+        color: var(--muted);
+        font-size: 0.82rem;
+        margin-bottom: 4px;
+      }
+
+      tbody td:nth-child(1)::before {
+        content: 'Pilot';
+      }
+
+      tbody td:nth-child(2)::before {
+        content: 'Kills';
+      }
+
+      tbody td:nth-child(3)::before {
+        content: 'Pod Kills';
+      }
+
+      tbody td:nth-child(4)::before {
+        content: 'zKillboard';
+      }
+
+      tbody td:nth-child(5)::before {
+        content: 'Threat';
+      }
+
+      tbody td:nth-child(6)::before {
+        content: 'Notes';
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>EVE Local Threat Report</h1>
+      <div class="sub">
+        Paste one pilot name per line, then pull recent zKillboard activity and flag characters who look dangerous. This
+        tool checks ship and pod kills for the current month plus a selectable number of previous months, and links each
+        pilot directly to their zKillboard profile.
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <label for="names">Pilot names (one per line)</label>
+        <textarea id="names" placeholder="Insert pilot names here...
+
+Example:
+Chribba
+The Mittani
+Random Space Pirate"></textarea>
+
+        <div class="row">
+          <div>
+            <label for="monthsBack">Activity window</label>
+            <select id="monthsBack">
+              <option value="2">Previous 2 months</option>
+              <option value="3" selected>Previous 3 months</option>
+            </select>
+          </div>
+          <div>
+            <label>Pages per pilot</label>
+            <input type="text" value="1 (fixed)" disabled />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="highThreatKills">High threat at kills ≥</label>
+            <input id="highThreatKills" type="number" min="1" value="3" />
+          </div>
+          <div>
+            <label for="highThreatPods">High threat at pod kills ≥</label>
+            <input id="highThreatPods" type="number" min="0" value="1" />
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="analyzeBtn" class="primary">Analyze pilots</button>
+          <button id="sampleBtn" class="secondary">Load sample names</button>
+          <button id="clearBtn" class="secondary">Clear</button>
+        </div>
+
+        <div id="status" class="status"></div>
+        <div class="meta">
+          Tip: keep the page limit low if you are checking a large local list. This version queries zKillboard by
+          calendar month, so it is best for fast threat snapshots rather than exact rolling 60 or 90 day windows.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="summary" id="summary">
+          <div class="stat">
+            <div class="k">Pilots analyzed</div>
+            <div class="v" id="sumPilots">0</div>
+          </div>
+          <div class="stat">
+            <div class="k">Threats flagged</div>
+            <div class="v" id="sumThreats">0</div>
+          </div>
+          <div class="stat">
+            <div class="k">Ship kills</div>
+            <div class="v" id="sumKills">0</div>
+          </div>
+          <div class="stat">
+            <div class="k">Pod kills</div>
+            <div class="v" id="sumPods">0</div>
+          </div>
+        </div>
+
+        <div style="overflow:auto; max-height: 70vh;">
+          <table>
+            <thead>
+              <tr>
+                <th>Pilot</th>
+                <th>Kills</th>
+                <th>Pod Kills</th>
+                <th>Threat</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr>
+                <td colspan="6" class="note">Results will appear here.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note">
+          Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
+          activity or pod kill count crosses your thresholds, <strong>medium</strong> if they still show notable recent
+          PvP activity, and <strong>low</strong> if they show little or no recent kill activity in the chosen window.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CAPSULE_GROUP_ID = 29;
+    const ESI_IDS_URL = 'https://esi.evetech.net/latest/universe/ids/';
+    const ESI_TYPE_URL = 'https://esi.evetech.net/latest/universe/types/';
+    const ZKILL_API_BASE = 'https://zkillboard.com/api';
+
+    const namesEl = document.getElementById('names');
+    const monthsBackEl = document.getElementById('monthsBack');
+    // maxPages removed (fixed to 1)
+    const highThreatKillsEl = document.getElementById('highThreatKills');
+    const highThreatPodsEl = document.getElementById('highThreatPods');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const sampleBtn = document.getElementById('sampleBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusEl = document.getElementById('status');
+    const resultsBody = document.getElementById('resultsBody');
+
+    const sumPilots = document.getElementById('sumPilots');
+    const sumThreats = document.getElementById('sumThreats');
+    const sumKills = document.getElementById('sumKills');
+    const sumPods = document.getElementById('sumPods');
+
+    const typeCache = new Map();
+    const pilotResultCache = new Map();
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function normalizeNames(raw) {
+      return [...new Set(
+        raw
+          .split(/\r?\n/)
+          .map(v => v.trim())
+          .filter(Boolean)
+      )];
+    }
+
+    function buildCacheKey(name, monthsBack, maxPages, highThreatKills, highThreatPods) {
+      return JSON.stringify({ name, monthsBack, maxPages, highThreatKills, highThreatPods });
+    }
+
+    function prunePilotCache(activeNames) {
+      const activeNameSet = new Set(activeNames.map(name => name.toLowerCase()));
+      for (const key of pilotResultCache.keys()) {
+        try {
+          const parsed = JSON.parse(key);
+          if (!activeNameSet.has(String(parsed.name || '').toLowerCase())) {
+            pilotResultCache.delete(key);
+          }
+        } catch {
+          pilotResultCache.delete(key);
+        }
+      }
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`${response.status} ${response.statusText} - ${text.slice(0, 180)}`);
+      }
+      return response.json();
+    }
+
+    async function resolveCharacterIds(names) {
+      const payload = JSON.stringify(names);
+      const data = await fetchJson(ESI_IDS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: payload
+      });
+
+      const byName = new Map();
+      for (const entry of (data.characters || [])) {
+        byName.set(entry.name, entry.id);
+      }
+
+      return names.map(name => ({
+        name,
+        characterId: byName.get(name) || null
+      }));
+    }
+
+    async function getTypeInfo(typeId) {
+      if (!typeId) return null;
+      if (typeCache.has(typeId)) return typeCache.get(typeId);
+
+      const promise = fetchJson(`${ESI_TYPE_URL}${typeId}/`).catch(() => null);
+      typeCache.set(typeId, promise);
+      return promise;
+    }
+
+    async function isPodKill(victimShipTypeId) {
+      if (!victimShipTypeId) return false;
+      const typeInfo = await getTypeInfo(victimShipTypeId);
+      return typeInfo?.group_id === CAPSULE_GROUP_ID;
+    }
+
+    function getMonthRequests(monthsBack) {
+      const requests = [];
+      const now = new Date();
+
+      for (let offset = 0; offset <= monthsBack; offset++) {
+        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+        requests.push({
+          year: d.getUTCFullYear(),
+          month: d.getUTCMonth() + 1
+        });
+      }
+
+      return requests;
+    }
+
+    async function fetchCharacterKills(characterId, monthsBack, maxPages) {
+      const allKills = [];
+      const monthRequests = getMonthRequests(monthsBack);
+
+      for (const req of monthRequests) {
+        for (let page = 1; page <= maxPages; page++) {
+          const url = `${ZKILL_API_BASE}/kills/characterID/${characterId}/year/${req.year}/month/${req.month}/page/${page}/`;
+          const pageData = await fetchJson(url, {
+            headers: {
+              'Accept': 'application/json',
+              'Accept-Encoding': 'gzip',
+              'User-Agent': 'EVE Local Threat Report'
+            }
+          });
+
+          if (!Array.isArray(pageData) || pageData.length === 0) break;
+          allKills.push(...pageData);
+
+          if (pageData.length < 200) break;
+          await sleep(225);
+        }
+      }
+
+      const seen = new Set();
+      return allKills.filter(kill => {
+        const key =
+          String(kill.killmail_id || '') +
+          ':' +
+          String(kill.zkb && kill.zkb.hash ? kill.zkb.hash : '');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    async function summarizePilot(pilot, monthsBack, maxPages, thresholds) {
+      if (!pilot.characterId) {
+        return {
+          name: pilot.name,
+          found: false,
+          characterId: null,
+          kills: 0,
+          podKills: 0,
+          zkillUrl: '#',
+          threat: 'low',
+          notes: 'Character name could not be resolved in ESI.'
+        };
+      }
+
+      const kills = await fetchCharacterKills(pilot.characterId, monthsBack, maxPages);
+      let podKills = 0;
+
+      const uniqueVictimTypeIds = [...new Set(kills.map(k => k.victim?.ship_type_id).filter(Boolean))];
+      for (const typeId of uniqueVictimTypeIds) {
+        await getTypeInfo(typeId);
+        await sleep(50);
+      }
+
+      for (const kill of kills) {
+        const victimShipTypeId = kill.victim?.ship_type_id;
+        if (await isPodKill(victimShipTypeId)) {
+          podKills++;
+        }
+      }
+
+      let threat = 'low';
+      let notes = 'Low recent kill activity in selected month range.';
+
+      if (kills.length >= thresholds.highThreatKills || podKills >= thresholds.highThreatPods) {
+        threat = 'high';
+        notes = podKills >= thresholds.highThreatPods
+          ? 'Recent podding activity stands out.'
+          : 'High recent PvP kill count in selected month range.';
+      } else if (kills.length >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || podKills >= 1) {
+        threat = 'medium';
+        notes = podKills > 0
+          ? 'Recent pod kill(s) detected.'
+          : 'Noticeable recent PvP activity in selected month range.';
+      }
+
+      return {
+        name: pilot.name,
+        found: true,
+        characterId: pilot.characterId,
+        kills: kills.length,
+        podKills,
+        zkillUrl: `https://zkillboard.com/character/${pilot.characterId}/`,
+        threat,
+        notes
+      };
+    }
+
+    function threatPill(threat) {
+      const cls = threat === 'high' ? 'high' : threat === 'medium' ? 'medium' : 'low';
+      return `<span class="pill ${cls}">${threat.toUpperCase()}</span>`;
+    }
+
+    function formatDate(value) {
+      return value || '—';
+    }
+
+    function renderResults(rows) {
+      if (!rows.length) {
+        resultsBody.innerHTML = `<tr><td colspan="6" class="note">No results to show.</td></tr>`;
+        return;
+      }
+
+      const sorted = [...rows].sort((a, b) => {
+        const threatRank = { high: 2, medium: 1, low: 0 };
+        if (threatRank[b.threat] !== threatRank[a.threat]) return threatRank[b.threat] - threatRank[a.threat];
+        if (b.kills !== a.kills) return b.kills - a.kills;
+        return b.podKills - a.podKills;
+      });
+
+      resultsBody.innerHTML = sorted.map(row => `
+        <tr>
+          <td><a href="${escapeHtml(row.zkillUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.name)}</a></td>
+          <td>${row.kills}</td>
+          <td>${row.podKills}</td>
+          <td>${threatPill(row.threat)}</td>
+          <td>${escapeHtml(row.notes)}</td>
+        </tr>
+      `).join('');
+
+      sumPilots.textContent = String(sorted.length);
+      sumThreats.textContent = String(sorted.filter(r => r.threat !== 'low').length);
+      sumKills.textContent = String(sorted.reduce((acc, row) => acc + row.kills, 0));
+      sumPods.textContent = String(sorted.reduce((acc, row) => acc + row.podKills, 0));
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    async function analyze() {
+      const names = normalizeNames(namesEl.value);
+      if (!names.length) {
+        setStatus('Paste at least one pilot name first.');
+        return;
+      }
+
+      analyzeBtn.disabled = true;
+      sampleBtn.disabled = true;
+      clearBtn.disabled = true;
+      renderResults([]);
+      sumPilots.textContent = '0';
+      sumThreats.textContent = '0';
+      sumKills.textContent = '0';
+      sumPods.textContent = '0';
+
+      const monthsBack = Number(monthsBackEl.value);
+      const maxPages = 1; // fixed to avoid rate limiting
+      const thresholds = {
+        highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
+        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
+      };
+
+      try {
+        prunePilotCache(names);
+        setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
+        const pilots = await resolveCharacterIds(names);
+
+        const results = [];
+        for (let i = 0; i < pilots.length; i++) {
+          const pilot = pilots[i];
+          const cacheKey = buildCacheKey(
+            pilot.name,
+            monthsBack,
+            maxPages,
+            thresholds.highThreatKills,
+            thresholds.highThreatPods
+          );
+
+          if (pilotResultCache.has(cacheKey)) {
+            results.push(pilotResultCache.get(cacheKey));
+            renderResults(results);
+            setStatus(`Using cached result for ${pilot.name} (${i + 1}/${pilots.length})...`);
+            continue;
+          }
+
+          setStatus(`Checking ${pilot.name} (${i + 1}/${pilots.length})...`);
+          const result = await summarizePilot(pilot, monthsBack, maxPages, thresholds);
+          pilotResultCache.set(cacheKey, result);
+          results.push(result);
+          renderResults(results);
+          await sleep(275);
+        }
+
+        const unresolved = results.filter(r => !r.found).length;
+        const cachedCount = results.filter(r => {
+          const cacheKey = buildCacheKey(
+            r.name,
+            monthsBack,
+            maxPages,
+            thresholds.highThreatKills,
+            thresholds.highThreatPods
+          );
+          return pilotResultCache.has(cacheKey);
+        }).length;
+        setStatus(`Done. ${results.length} pilot(s) shown. ${cachedCount} cached result(s) available for this pasted list.${unresolved ? ` ${unresolved} name(s) could not be resolved.` : ''}`);
+      } catch (error) {
+        console.error(error);
+        setStatus(`Error: ${error.message}`);
+      } finally {
+        analyzeBtn.disabled = false;
+        sampleBtn.disabled = false;
+        clearBtn.disabled = false;
+      }
+    }
+
+    namesEl.addEventListener('input', () => {
+      const names = normalizeNames(namesEl.value);
+      prunePilotCache(names);
+    });
+
+    analyzeBtn.addEventListener('click', analyze);
+    sampleBtn.addEventListener('click', () => {
+      namesEl.value = ['Chribba', 'Auraus Porcaleus', 'CCP Convict'].join('\n');
+      setStatus('Loaded sample names.');
+    });
+    clearBtn.addEventListener('click', () => {
+      namesEl.value = '';
+      setStatus('');
+      pilotResultCache.clear();
+      renderResults([]);
+      sumPilots.textContent = '0';
+      sumThreats.textContent = '0';
+      sumKills.textContent = '0';
+      sumPods.textContent = '0';
+    });
+  </script>
+</body>
+
+</html>
