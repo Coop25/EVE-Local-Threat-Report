@@ -184,6 +184,7 @@
     }
 
     table {
+      text-align: center;
       width: 100%;
       border-collapse: collapse;
       overflow: hidden;
@@ -357,8 +358,9 @@ Random Space Pirate"></textarea>
           <div>
             <label for="monthsBack">Activity window</label>
             <select id="monthsBack">
-              <option value="2">Previous 2 months</option>
-              <option value="3" selected>Previous 3 months</option>
+              <option value="1">1 month ago</option>
+              <option value="2">2 months ago</option>
+              <option value="3" selected>3 months ago</option>
             </select>
           </div>
           <div>
@@ -442,12 +444,14 @@ Random Space Pirate"></textarea>
 
         <div class="note">
           Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
-          activity or pod kill count crosses your thresholds, <strong>warning</strong> if they still show notable recent
-          PvP activity, and <strong>low</strong> if they show little or no recent kill activity in the chosen window.
+          activity or pod kill count crosses your thresholds, <strong>warning</strong> if they have any recent activity
+          but stay below those thresholds, and <strong>low</strong> if they show no recent kill activity in the chosen
+          window.
         </div>
       </div>
     </div>
   </div>
+
 
 
   <script>
@@ -461,9 +465,16 @@ Random Space Pirate"></textarea>
     const CACHE_TTL_MS = 60 * 60 * 1000;
     const CACHE_MAX_ENTRIES = 50;
 
-    document.getElementById("reqPerMin").textContent = REQUESTS_PER_MINUTE;
+    const SPACE_ORDER = [
+      ['a', 'all'],
+      ['h', 'highsec'],
+      ['l', 'lowsec'],
+      ['n', 'nullsec'],
+      ['w', 'wormhole']
+    ];
 
-    const SPACE_KEYS = ['all', 'highsec', 'lowsec', 'nullsec', 'wormhole'];
+    const reqPerMinEl = document.getElementById('reqPerMin');
+    if (reqPerMinEl) reqPerMinEl.textContent = REQUESTS_PER_MINUTE;
 
     const namesEl = document.getElementById('names');
     const monthsBackEl = document.getElementById('monthsBack');
@@ -472,7 +483,6 @@ Random Space Pirate"></textarea>
     const spaceFilterEl = document.getElementById('spaceFilter');
     const analyzeBtn = document.getElementById('analyzeBtn');
     const shareBtn = document.getElementById('shareBtn');
-    // const sampleBtn = document.getElementById('sampleBtn');
     const clearBtn = document.getElementById('clearBtn');
     const statusEl = document.getElementById('status');
     const shareStatusEl = document.getElementById('shareStatus');
@@ -485,18 +495,14 @@ Random Space Pirate"></textarea>
 
     const typeCache = new Map();
     const pilotSummaryCache = new Map();
-    const requestQueueState = {
-      nextAvailableAt: 0
-    };
+    const requestQueueState = { nextAvailableAt: 0 };
 
     function setStatus(message) {
       statusEl.textContent = message;
     }
 
     function setShareStatus(message) {
-      if (shareStatusEl) {
-        shareStatusEl.textContent = message;
-      }
+      if (shareStatusEl) shareStatusEl.textContent = message;
     }
 
     function sleep(ms) {
@@ -506,9 +512,7 @@ Random Space Pirate"></textarea>
     async function waitForRequestSlot() {
       const now = Date.now();
       const waitMs = Math.max(0, requestQueueState.nextAvailableAt - now);
-      if (waitMs > 0) {
-        await sleep(waitMs);
-      }
+      if (waitMs > 0) await sleep(waitMs);
       requestQueueState.nextAvailableAt = Math.max(requestQueueState.nextAvailableAt, Date.now()) + REQUEST_INTERVAL_MS;
     }
 
@@ -525,11 +529,8 @@ Random Space Pirate"></textarea>
       const retryAfter = response.headers.get('Retry-After');
       if (retryAfter) {
         const seconds = Number(retryAfter);
-        if (!Number.isNaN(seconds)) {
-          return Math.max(seconds * 1000, 10000);
-        }
+        if (!Number.isNaN(seconds)) return Math.max(seconds * 1000, 10000);
       }
-
       const jitter = Math.floor(Math.random() * 1000);
       return 10000 * Math.pow(2, attempt) + jitter;
     }
@@ -596,6 +597,16 @@ Random Space Pirate"></textarea>
       return `${year}-${String(month).padStart(2, '0')}`;
     }
 
+    function getShortMonthKey(monthKey) {
+      const [year, month] = String(monthKey).split('-');
+      return `${String(year).slice(2)}-${Number(month)}`;
+    }
+
+    function expandShortMonthKey(shortKey) {
+      const [yy, month] = String(shortKey).split('-');
+      return `20${String(yy).padStart(2, '0')}-${String(month).padStart(2, '0')}`;
+    }
+
     function getNeededMonths(monthsBack) {
       const requests = [];
       const now = new Date();
@@ -653,22 +664,10 @@ Random Space Pirate"></textarea>
       const flags = { all: true };
 
       for (const label of labels) {
-        if (label === 'loc:highsec') {
-          flags.highsec = true;
-          return flags;
-        }
-        if (label === 'loc:lowsec') {
-          flags.lowsec = true;
-          return flags;
-        }
-        if (label === 'loc:nullsec') {
-          flags.nullsec = true;
-          return flags;
-        }
-        if (label === 'loc:w-space') {
-          flags.wormhole = true;
-          return flags;
-        }
+        if (label === 'loc:highsec') { flags.highsec = true; return flags; }
+        if (label === 'loc:lowsec') { flags.lowsec = true; return flags; }
+        if (label === 'loc:nullsec') { flags.nullsec = true; return flags; }
+        if (label === 'loc:w-space') { flags.wormhole = true; return flags; }
       }
 
       return flags;
@@ -689,16 +688,12 @@ Random Space Pirate"></textarea>
 
         if (!Array.isArray(pageData) || pageData.length === 0) break;
         allKills.push(...pageData);
-
         if (pageData.length < 200) break;
       }
 
       const seen = new Set();
       return allKills.filter(kill => {
-        const key =
-          String(kill.killmail_id || '') +
-          ':' +
-          String(kill.zkb && kill.zkb.hash ? kill.zkb.hash : '');
+        const key = String(kill.killmail_id || '') + ':' + String(kill.zkb && kill.zkb.hash ? kill.zkb.hash : '');
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -710,15 +705,13 @@ Random Space Pirate"></textarea>
 
       for (const kill of kills) {
         const victimShipTypeId = kill.victim && kill.victim.ship_type_id ? kill.victim.ship_type_id : null;
-        const isPod = await isPodKill(victimShipTypeId);
-        const spaceFlags = await classifyKillSpace(kill);
+        const pod = await isPodKill(victimShipTypeId);
+        const spaceFlags = classifyKillSpace(kill);
 
-        for (const key of SPACE_KEYS) {
+        for (const [, key] of SPACE_ORDER) {
           if (spaceFlags[key]) {
             counts[key].kills += 1;
-            if (isPod) {
-              counts[key].pods += 1;
-            }
+            if (pod) counts[key].pods += 1;
           }
         }
       }
@@ -756,22 +749,16 @@ Random Space Pirate"></textarea>
       const existing = pilotSummaryCache.get(cacheKey);
       const cacheExpired = !existing || !existing.cachedAt || (Date.now() - existing.cachedAt) > CACHE_TTL_MS;
 
-      if (cacheExpired && existing) {
-        pilotSummaryCache.delete(cacheKey);
-      }
+      if (cacheExpired && existing) pilotSummaryCache.delete(cacheKey);
 
       const entry = ensurePilotCacheEntry(pilot);
 
-      if (!pilot.characterId) {
-        return entry;
-      }
+      if (!pilot.characterId) return entry;
 
       const neededMonths = getNeededMonths(monthsBack);
       const missingMonths = neededMonths.filter(m => !entry.months[m.monthKey]);
 
-      if (missingMonths.length === 0) {
-        return entry;
-      }
+      if (missingMonths.length === 0) return entry;
 
       for (let i = 0; i < missingMonths.length; i++) {
         const monthInfo = missingMonths[i];
@@ -805,18 +792,18 @@ Random Space Pirate"></textarea>
     function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter) {
       const counts = getCountsForMonths(entry, monthsBack, spaceFilter);
       let threat = 'low';
-      let notes = `Low recent kill activity in selected month range (${spaceFilter}).`;
+      let notes = `No recent kill activity in selected month range (${spaceFilter}).`;
 
       if (counts.kills >= thresholds.highThreatKills || counts.pods >= thresholds.highThreatPods) {
         threat = 'high';
         notes = counts.pods >= thresholds.highThreatPods
           ? `Recent podding activity stands out in ${spaceFilter}.`
           : `High recent PvP kill count in ${spaceFilter}.`;
-      } else if (counts.kills >= Math.max(8, Math.floor(thresholds.highThreatKills * 0.4)) || counts.pods >= 1) {
+      } else if (counts.kills > 0 || counts.pods > 0) {
         threat = 'warning';
         notes = counts.pods > 0
-          ? `Recent pod kill(s) detected in ${spaceFilter}.`
-          : `Noticeable recent PvP activity in ${spaceFilter}.`;
+          ? `Recent activity detected in ${spaceFilter}, but below the high-threat threshold.`
+          : `Recent kills detected in ${spaceFilter}, but below the high-threat threshold.`;
       }
 
       return {
@@ -838,7 +825,7 @@ Random Space Pirate"></textarea>
 
     function renderResults(rows) {
       if (!rows.length) {
-        resultsBody.innerHTML = `<tr><td colspan="5" class="note">No results to show.</td></tr>`;
+        resultsBody.innerHTML = `<tr><td colspan="5" class="note">Results will appear here.</td></tr>`;
         return;
       }
 
@@ -874,67 +861,82 @@ Random Space Pirate"></textarea>
         .replaceAll("'", '&#39;');
     }
 
-
-    function getShortMonthKey(monthKey) {
-      const [year, month] = String(monthKey).split('-');
-      return `${String(year).slice(2)}-${Number(month)}`;
+    function sanitizeNameForShare(name) {
+      return String(name || '')
+        .replaceAll('_', '__')
+        .replaceAll(' ', '_');
     }
 
-    function expandShortMonthKey(shortKey) {
-      const [yy, month] = String(shortKey).split('-');
-      return `20${String(yy).padStart(2, '0')}-${String(month).padStart(2, '0')}`;
-    }
-
-    function base64UrlEncode(str) {
-      return btoa(unescape(encodeURIComponent(str)))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/g, '');
-    }
-
-    function base64UrlDecode(str) {
-      let value = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
-      const pad = value.length % 4;
-      if (pad) {
-        value += '='.repeat(4 - pad);
+    function unsanitizeNameFromShare(name) {
+      let result = '';
+      for (let i = 0; i < name.length; i++) {
+        const ch = name[i];
+        if (ch === '_') {
+          if (name[i + 1] === '_') {
+            result += '_';
+            i += 1;
+          } else {
+            result += ' ';
+          }
+        } else {
+          result += ch;
+        }
       }
-      return decodeURIComponent(escape(atob(value)));
+      return result;
+    }
+
+    function encodeMonthBucketCompact(monthKey, data) {
+      const parts = [getShortMonthKey(monthKey)];
+      const allKills = Number(data?.all?.kills || 0);
+      const allPods = Number(data?.all?.pods || 0);
+      if (allKills || allPods) parts.push(`a${allKills}-${allPods}`);
+
+      for (const [shortKey, longKey] of SPACE_ORDER.slice(1)) {
+        const kills = Number(data?.[longKey]?.kills || 0);
+        const pods = Number(data?.[longKey]?.pods || 0);
+        if (kills || pods) parts.push(`${shortKey}${kills}-${pods}`);
+      }
+
+      return parts.join('_');
     }
 
     function encodeMonthBuckets(months) {
       const keys = Object.keys(months || {}).sort().reverse();
-      return keys.map(monthKey => {
-        const data = months[monthKey] || makeEmptyCounts();
-        return [
-          getShortMonthKey(monthKey),
-          data.all.kills, data.all.pods,
-          data.highsec.kills, data.highsec.pods,
-          data.lowsec.kills, data.lowsec.pods,
-          data.nullsec.kills, data.nullsec.pods,
-          data.wormhole.kills, data.wormhole.pods
-        ].join(',');
-      }).join('|');
+      return keys
+        .map(monthKey => encodeMonthBucketCompact(monthKey, months[monthKey]))
+        .filter(Boolean)
+        .join('.');
     }
 
     function decodeMonthBuckets(str) {
       const months = {};
       if (!str) return months;
 
-      for (const rawEntry of String(str).split('|')) {
+      for (const rawEntry of String(str).split('.')) {
         if (!rawEntry) continue;
-        const parts = rawEntry.split(',');
-        if (parts.length < 11) continue;
 
-        const monthKey = expandShortMonthKey(parts[0]);
-        const nums = parts.slice(1).map(v => Number(v) || 0);
+        const segments = rawEntry.split('_');
+        const monthShort = segments.shift();
+        if (!monthShort) continue;
 
-        months[monthKey] = {
-          all: { kills: nums[0], pods: nums[1] },
-          highsec: { kills: nums[2], pods: nums[3] },
-          lowsec: { kills: nums[4], pods: nums[5] },
-          nullsec: { kills: nums[6], pods: nums[7] },
-          wormhole: { kills: nums[8], pods: nums[9] }
-        };
+        const monthKey = expandShortMonthKey(monthShort);
+        const bucket = makeEmptyCounts();
+
+        for (const seg of segments) {
+          const tag = seg.slice(0, 1);
+          const rest = seg.slice(1);
+          const [killsRaw, podsRaw] = rest.split('-');
+          const kills = Number(killsRaw || 0);
+          const pods = Number(podsRaw || 0);
+
+          if (tag === 'a') bucket.all = { kills, pods };
+          if (tag === 'h') bucket.highsec = { kills, pods };
+          if (tag === 'l') bucket.lowsec = { kills, pods };
+          if (tag === 'n') bucket.nullsec = { kills, pods };
+          if (tag === 'w') bucket.wormhole = { kills, pods };
+        }
+
+        months[monthKey] = bucket;
       }
 
       return months;
@@ -942,7 +944,7 @@ Random Space Pirate"></textarea>
 
     function serializePilotEntry(entry) {
       return [
-        encodeURIComponent(entry.name || ''),
+        sanitizeNameForShare(entry.name || ''),
         entry.characterId || '',
         encodeMonthBuckets(entry.months || {})
       ].join('~');
@@ -957,7 +959,7 @@ Random Space Pirate"></textarea>
       const charIdPart = serialized.slice(firstSep + 1, secondSep);
       const monthsPart = serialized.slice(secondSep + 1);
 
-      const name = decodeURIComponent(encodedName || '');
+      const name = unsanitizeNameFromShare(encodedName || '');
       const characterId = charIdPart ? Number(charIdPart) : null;
 
       return {
@@ -979,31 +981,23 @@ Random Space Pirate"></textarea>
         if (!entry) continue;
         pilots.push(serializePilotEntry(entry));
       }
-
       if (!pilots.length) return '';
 
       const settings = [
-        `m=${encodeURIComponent(monthsBackEl.value)}`,
-        `s=${encodeURIComponent(spaceFilterEl.value)}`,
-        `k=${encodeURIComponent(highThreatKillsEl.value)}`,
-        `p=${encodeURIComponent(highThreatPodsEl.value)}`
+        `m=${monthsBackEl.value}`,
+        `s=${spaceFilterEl.value}`,
+        `k=${highThreatKillsEl.value}`,
+        `p=${highThreatPodsEl.value}`
       ].join('&');
 
-      return base64UrlEncode(`${settings}&d=${pilots.join('!')}`);
+      return `${settings}&d=${pilots.join('!')}`;
     }
 
     function loadSharePayloadFromHash() {
       const hash = String(location.hash || '');
       if (!hash.startsWith('#scan=')) return false;
 
-      let raw;
-      try {
-        raw = base64UrlDecode(hash.slice(6));
-      } catch (error) {
-        setShareStatus('Could not decode shared scan data from the link.');
-        return false;
-      }
-
+      const raw = hash.slice(6);
       const params = new URLSearchParams(raw);
       const monthsBack = params.get('m');
       const spaceFilter = params.get('s');
@@ -1047,7 +1041,6 @@ Random Space Pirate"></textarea>
       }
 
       const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
-
       try {
         await navigator.clipboard.writeText(shareUrl);
         setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
@@ -1064,9 +1057,7 @@ Random Space Pirate"></textarea>
         sumThreats.textContent = '0';
         sumKills.textContent = '0';
         sumPods.textContent = '0';
-        if (showProgress) {
-          setStatus('Paste at least one pilot name first.');
-        }
+        if (showProgress) setStatus('Paste at least one pilot name first.');
         return;
       }
 
@@ -1078,9 +1069,7 @@ Random Space Pirate"></textarea>
       const spaceFilter = spaceFilterEl.value;
 
       prunePilotCache();
-      if (showProgress) {
-        setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
-      }
+      if (showProgress) setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
       const pilots = await resolveCharacterIds(names);
 
       const results = [];
@@ -1096,11 +1085,8 @@ Random Space Pirate"></textarea>
         const entry = await ensurePilotMonthsCached(pilot, monthsBack, `${index + 1}/${pilots.length}`);
 
         const afterMonths = Object.keys(entry.months || {}).length;
-        if (afterMonths > beforeMonths) {
-          fetchedNewMonthBuckets += (afterMonths - beforeMonths);
-        } else {
-          reusedFullyCached += 1;
-        }
+        if (afterMonths > beforeMonths) fetchedNewMonthBuckets += (afterMonths - beforeMonths);
+        else reusedFullyCached += 1;
 
         results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter));
         renderResults(results);
@@ -1115,7 +1101,6 @@ Random Space Pirate"></textarea>
     async function analyze() {
       analyzeBtn.disabled = true;
       if (shareBtn) shareBtn.disabled = true;
-      // sampleBtn.disabled = true;
       clearBtn.disabled = true;
       renderResults([]);
       sumPilots.textContent = '0';
@@ -1131,7 +1116,6 @@ Random Space Pirate"></textarea>
       } finally {
         analyzeBtn.disabled = false;
         if (shareBtn) shareBtn.disabled = false;
-        // sampleBtn.disabled = false;
         clearBtn.disabled = false;
       }
     }
@@ -1193,15 +1177,7 @@ Random Space Pirate"></textarea>
     });
 
     analyzeBtn.addEventListener('click', analyze);
-    if (shareBtn) {
-      shareBtn.addEventListener('click', copyShareLink);
-    }
-
-    // sampleBtn.addEventListener('click', () => {
-    //   namesEl.value = ['Chribba', 'Auraus Porcaleus', 'CCP Convict'].join('\n');
-    //   setStatus('Loaded sample names.');
-    //   rerenderFromCacheOnly();
-    // });
+    if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
 
     clearBtn.addEventListener('click', () => {
       namesEl.value = '';
@@ -1215,12 +1191,14 @@ Random Space Pirate"></textarea>
       sumKills.textContent = '0';
       sumPods.textContent = '0';
     });
+
     window.addEventListener('hashchange', () => {
       loadSharePayloadFromHash();
     });
 
     loadSharePayloadFromHash();
   </script>
+
 
 </body>
 
