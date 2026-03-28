@@ -4,6 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
   <title>EVE Local Threat Report</title>
   <style>
     :root {
@@ -92,6 +94,13 @@
       border-radius: 12px;
       padding: 12px;
       font: inherit;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+      padding: 0;
+      vertical-align: middle;
     }
 
     textarea {
@@ -255,6 +264,36 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+
+    .logo img {
+      width: 64px;
+      height: 64px;
+      object-fit: contain;
+    }
+
+    .logo-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .logo-text h1 {
+      margin: 0;
+      font-size: 2rem;
+    }
+
+    .logo-text span {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
     @media (max-width: 980px) {
       .grid {
         grid-template-columns: 1fr;
@@ -336,7 +375,13 @@
 <body>
   <div class="wrap">
     <div class="hero">
-      <h1>EVE Local Threat Report</h1>
+      <div class="logo">
+        <img src="logo.png" alt="Threat Radar Logo">
+        <div class="logo-text">
+          <h1>EVE Local Threat Report</h1>
+          <span>Real-time local intel & threat analysis</span>
+        </div>
+      </div>
       <div class="sub">
         Paste one pilot name per line, then pull recent zKillboard activity and flag characters who look dangerous. This
         tool checks ship and pod kills for the selected month range, can filter by space type using zKill location
@@ -386,6 +431,15 @@ Random Space Pirate"></textarea>
           </div>
         </div>
 
+        <div class="row">
+          <div>
+            <label><input id="includeStructures" type="checkbox" checked /> Include structure kills</label>
+          </div>
+          <div>
+            <label><input id="includeDeployables" type="checkbox" checked /> Include deployable kills</label>
+          </div>
+        </div>
+
         <div class="buttons">
           <button id="analyzeBtn" class="primary">Analyze pilots</button>
           <button id="shareBtn" class="secondary">Share this scan</button>
@@ -398,8 +452,8 @@ Random Space Pirate"></textarea>
         <div class="meta">
           Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute,
           caches the last 50 pilot
-          lookups for 1 hour, and filters kills by the selected space type using zKill location labels before scoring
-          threats.
+          lookups for 1 hour, filters kills by the selected space type using zKill location labels, and can include or
+          exclude deployable and structure kills in both the live view and shared links.
         </div>
       </div>
 
@@ -456,7 +510,10 @@ Random Space Pirate"></textarea>
 
   <script>
     const CAPSULE_GROUP_ID = 29;
+    const STRUCTURE_CATEGORY_ID = 65;
+    const DEPLOYABLE_CATEGORY_ID = 22;
     const ESI_IDS_URL = 'https://esi.evetech.net/latest/universe/ids/';
+    const ESI_NAMES_URL = 'https://esi.evetech.net/latest/universe/names/';
     const ESI_TYPE_URL = 'https://esi.evetech.net/latest/universe/types/';
     const ZKILL_API_BASE = 'https://zkillboard.com/api';
 
@@ -481,6 +538,8 @@ Random Space Pirate"></textarea>
     const highThreatKillsEl = document.getElementById('highThreatKills');
     const highThreatPodsEl = document.getElementById('highThreatPods');
     const spaceFilterEl = document.getElementById('spaceFilter');
+    const includeStructuresEl = document.getElementById('includeStructures');
+    const includeDeployablesEl = document.getElementById('includeDeployables');
     const analyzeBtn = document.getElementById('analyzeBtn');
     const shareBtn = document.getElementById('shareBtn');
     const clearBtn = document.getElementById('clearBtn');
@@ -585,11 +644,11 @@ Random Space Pirate"></textarea>
 
     function makeEmptyCounts() {
       return {
-        all: { kills: 0, pods: 0 },
-        highsec: { kills: 0, pods: 0 },
-        lowsec: { kills: 0, pods: 0 },
-        nullsec: { kills: 0, pods: 0 },
-        wormhole: { kills: 0, pods: 0 }
+        all: { kills: 0, pods: 0, structures: 0, deployables: 0 },
+        highsec: { kills: 0, pods: 0, structures: 0, deployables: 0 },
+        lowsec: { kills: 0, pods: 0, structures: 0, deployables: 0 },
+        nullsec: { kills: 0, pods: 0, structures: 0, deployables: 0 },
+        wormhole: { kills: 0, pods: 0, structures: 0, deployables: 0 }
       };
     }
 
@@ -644,6 +703,34 @@ Random Space Pirate"></textarea>
       }));
     }
 
+    async function resolveCharacterNames(characterIds) {
+      const uniqueIds = [...new Set(
+        (characterIds || [])
+          .map(value => Number(value))
+          .filter(value => Number.isFinite(value) && value > 0)
+      )];
+
+      if (!uniqueIds.length) return new Map();
+
+      const data = await fetchJson(ESI_NAMES_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(uniqueIds)
+      });
+
+      const byId = new Map();
+      for (const entry of (Array.isArray(data) ? data : [])) {
+        if (!entry || entry.category !== 'character') continue;
+        if (!Number.isFinite(Number(entry.id))) continue;
+        byId.set(Number(entry.id), String(entry.name || entry.id));
+      }
+
+      return byId;
+    }
+
     async function getTypeInfo(typeId) {
       if (!typeId) return null;
       if (typeCache.has(typeId)) return typeCache.get(typeId);
@@ -653,10 +740,17 @@ Random Space Pirate"></textarea>
       return promise;
     }
 
-    async function isPodKill(victimShipTypeId) {
-      if (!victimShipTypeId) return false;
-      const typeInfo = await getTypeInfo(victimShipTypeId);
-      return Boolean(typeInfo && typeInfo.group_id === CAPSULE_GROUP_ID);
+    async function getVictimTypeInfo(victimShipTypeId) {
+      if (!victimShipTypeId) return null;
+      return getTypeInfo(victimShipTypeId);
+    }
+
+    function getKillCategoryId(kill) {
+      const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
+      const catLabel = labels.find(label => typeof label === 'string' && label.startsWith('cat:'));
+      if (!catLabel) return null;
+      const value = Number(catLabel.slice(4));
+      return Number.isFinite(value) ? value : null;
     }
 
     function classifyKillSpace(kill) {
@@ -705,13 +799,19 @@ Random Space Pirate"></textarea>
 
       for (const kill of kills) {
         const victimShipTypeId = kill.victim && kill.victim.ship_type_id ? kill.victim.ship_type_id : null;
-        const pod = await isPodKill(victimShipTypeId);
+        const victimTypeInfo = await getVictimTypeInfo(victimShipTypeId);
+        const pod = Boolean(victimTypeInfo && victimTypeInfo.group_id === CAPSULE_GROUP_ID);
+        const categoryId = getKillCategoryId(kill);
+        const isStructure = categoryId === STRUCTURE_CATEGORY_ID;
+        const isDeployable = categoryId === DEPLOYABLE_CATEGORY_ID;
         const spaceFlags = classifyKillSpace(kill);
 
         for (const [, key] of SPACE_ORDER) {
           if (spaceFlags[key]) {
             counts[key].kills += 1;
             if (pod) counts[key].pods += 1;
+            if (isStructure) counts[key].structures += 1;
+            if (isDeployable) counts[key].deployables += 1;
           }
         }
       }
@@ -774,23 +874,35 @@ Random Space Pirate"></textarea>
       return entry;
     }
 
-    function getCountsForMonths(entry, monthsBack, spaceFilter) {
-      const totals = { kills: 0, pods: 0 };
+    function getCountsForMonths(entry, monthsBack, spaceFilter, options = {}) {
+      const totals = { kills: 0, pods: 0, structures: 0, deployables: 0, excludedKills: 0 };
       const neededMonths = getNeededMonths(monthsBack);
+      const includeStructures = options.includeStructures !== false;
+      const includeDeployables = options.includeDeployables !== false;
 
       for (const monthInfo of neededMonths) {
         const monthCounts = entry.months[monthInfo.monthKey];
         if (!monthCounts) continue;
-        const bucket = monthCounts[spaceFilter] || { kills: 0, pods: 0 };
-        totals.kills += Number(bucket.kills || 0);
+        const bucket = monthCounts[spaceFilter] || { kills: 0, pods: 0, structures: 0, deployables: 0 };
+        const structures = Number(bucket.structures || 0);
+        const deployables = Number(bucket.deployables || 0);
+        const excludedStructures = includeStructures ? 0 : structures;
+        const excludedDeployables = includeDeployables ? 0 : deployables;
+
+        totals.kills += Math.max(0, Number(bucket.kills || 0) - excludedStructures - excludedDeployables);
         totals.pods += Number(bucket.pods || 0);
+        totals.structures += structures;
+        totals.deployables += deployables;
+        totals.excludedKills += excludedStructures + excludedDeployables;
       }
 
       return totals;
     }
 
-    function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter) {
-      const counts = getCountsForMonths(entry, monthsBack, spaceFilter);
+    function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, options = {}) {
+      const counts = getCountsForMonths(entry, monthsBack, spaceFilter, options);
+      const includeStructures = options.includeStructures !== false;
+      const includeDeployables = options.includeDeployables !== false;
       let threat = 'low';
       let notes = `No recent kill activity in selected month range (${spaceFilter}).`;
 
@@ -805,6 +917,11 @@ Random Space Pirate"></textarea>
           ? `Recent activity detected in ${spaceFilter}, but below the high-threat threshold.`
           : `Recent kills detected in ${spaceFilter}, but below the high-threat threshold.`;
       }
+
+      const filteredBits = [];
+      if (!includeStructures && counts.structures > 0) filteredBits.push(`${counts.structures} structure kill${counts.structures === 1 ? '' : 's'}`);
+      if (!includeDeployables && counts.deployables > 0) filteredBits.push(`${counts.deployables} deployable kill${counts.deployables === 1 ? '' : 's'}`);
+      if (filteredBits.length) notes += ` Filtered out ${filteredBits.join(' and ')}.`;
 
       return {
         name: entry.name,
@@ -889,12 +1006,16 @@ Random Space Pirate"></textarea>
       const parts = [getShortMonthKey(monthKey)];
       const allKills = Number(data?.all?.kills || 0);
       const allPods = Number(data?.all?.pods || 0);
-      if (allKills || allPods) parts.push(`a${allKills}-${allPods}`);
+      const allStructures = Number(data?.all?.structures || 0);
+      const allDeployables = Number(data?.all?.deployables || 0);
+      if (allKills || allPods || allStructures || allDeployables) parts.push(`a${allKills}-${allPods}-${allStructures}-${allDeployables}`);
 
       for (const [shortKey, longKey] of SPACE_ORDER.slice(1)) {
         const kills = Number(data?.[longKey]?.kills || 0);
         const pods = Number(data?.[longKey]?.pods || 0);
-        if (kills || pods) parts.push(`${shortKey}${kills}-${pods}`);
+        const structures = Number(data?.[longKey]?.structures || 0);
+        const deployables = Number(data?.[longKey]?.deployables || 0);
+        if (kills || pods || structures || deployables) parts.push(`${shortKey}${kills}-${pods}-${structures}-${deployables}`);
       }
 
       return parts.join('_');
@@ -925,15 +1046,17 @@ Random Space Pirate"></textarea>
         for (const seg of segments) {
           const tag = seg.slice(0, 1);
           const rest = seg.slice(1);
-          const [killsRaw, podsRaw] = rest.split('-');
+          const [killsRaw, podsRaw, structuresRaw, deployablesRaw] = rest.split('-');
           const kills = Number(killsRaw || 0);
           const pods = Number(podsRaw || 0);
+          const structures = Number(structuresRaw || 0);
+          const deployables = Number(deployablesRaw || 0);
 
-          if (tag === 'a') bucket.all = { kills, pods };
-          if (tag === 'h') bucket.highsec = { kills, pods };
-          if (tag === 'l') bucket.lowsec = { kills, pods };
-          if (tag === 'n') bucket.nullsec = { kills, pods };
-          if (tag === 'w') bucket.wormhole = { kills, pods };
+          if (tag === 'a') bucket.all = { kills, pods, structures, deployables };
+          if (tag === 'h') bucket.highsec = { kills, pods, structures, deployables };
+          if (tag === 'l') bucket.lowsec = { kills, pods, structures, deployables };
+          if (tag === 'n') bucket.nullsec = { kills, pods, structures, deployables };
+          if (tag === 'w') bucket.wormhole = { kills, pods, structures, deployables };
         }
 
         months[monthKey] = bucket;
@@ -944,7 +1067,6 @@ Random Space Pirate"></textarea>
 
     function serializePilotEntry(entry) {
       return [
-        sanitizeNameForShare(entry.name || ''),
         entry.characterId || '',
         encodeMonthBuckets(entry.months || {})
       ].join('~');
@@ -952,21 +1074,18 @@ Random Space Pirate"></textarea>
 
     function deserializePilotEntry(serialized) {
       const firstSep = serialized.indexOf('~');
-      const secondSep = serialized.indexOf('~', firstSep + 1);
-      if (firstSep === -1 || secondSep === -1) return null;
+      if (firstSep === -1) return null;
 
-      const encodedName = serialized.slice(0, firstSep);
-      const charIdPart = serialized.slice(firstSep + 1, secondSep);
-      const monthsPart = serialized.slice(secondSep + 1);
-
-      const name = unsanitizeNameFromShare(encodedName || '');
-      const characterId = charIdPart ? Number(charIdPart) : null;
+      const idPart = serialized.slice(0, firstSep);
+      const monthsPart = serialized.slice(firstSep + 1);
+      const characterId = idPart ? Number(idPart) : null;
+      const safeCharacterId = Number.isFinite(characterId) ? characterId : null;
 
       return {
         cachedAt: Date.now(),
-        name,
-        characterId: Number.isFinite(characterId) ? characterId : null,
-        zkillUrl: characterId ? `https://zkillboard.com/character/${characterId}/` : '#',
+        name: safeCharacterId ? String(safeCharacterId) : 'Unknown Pilot',
+        characterId: safeCharacterId,
+        zkillUrl: safeCharacterId ? `https://zkillboard.com/character/${safeCharacterId}/` : '#',
         months: decodeMonthBuckets(monthsPart)
       };
     }
@@ -976,9 +1095,11 @@ Random Space Pirate"></textarea>
       if (!names.length) return '';
 
       const pilots = [];
+      const seenCharacterIds = new Set();
       for (const name of names) {
         const entry = pilotSummaryCache.get(buildPilotCacheKey(name));
-        if (!entry) continue;
+        if (!entry || !entry.characterId || seenCharacterIds.has(entry.characterId)) continue;
+        seenCharacterIds.add(entry.characterId);
         pilots.push(serializePilotEntry(entry));
       }
       if (!pilots.length) return '';
@@ -987,13 +1108,15 @@ Random Space Pirate"></textarea>
         `m=${monthsBackEl.value}`,
         `s=${spaceFilterEl.value}`,
         `k=${highThreatKillsEl.value}`,
-        `p=${highThreatPodsEl.value}`
+        `p=${highThreatPodsEl.value}`,
+        `st=${includeStructuresEl.checked ? '1' : '0'}`,
+        `dp=${includeDeployablesEl.checked ? '1' : '0'}`
       ].join('&');
 
       return `${settings}&d=${pilots.join('!')}`;
     }
 
-    function loadSharePayloadFromHash() {
+    async function loadSharePayloadFromHash() {
       const hash = String(location.hash || '');
       if (!hash.startsWith('#scan=')) return false;
 
@@ -1003,34 +1126,95 @@ Random Space Pirate"></textarea>
       const spaceFilter = params.get('s');
       const highKills = params.get('k');
       const highPods = params.get('p');
+      const includeStructures = params.get('st');
+      const includeDeployables = params.get('dp');
       const data = params.get('d');
 
       if (monthsBack) monthsBackEl.value = monthsBack;
       if (spaceFilter) spaceFilterEl.value = spaceFilter;
       if (highKills) highThreatKillsEl.value = highKills;
       if (highPods) highThreatPodsEl.value = highPods;
+      if (includeStructures !== null && includeStructuresEl) includeStructuresEl.checked = includeStructures !== '0';
+      if (includeDeployables !== null && includeDeployablesEl) includeDeployablesEl.checked = includeDeployables !== '0';
 
       if (!data) return false;
 
-      const importedNames = [];
+      const importedEntries = [];
       for (const piece of data.split('!')) {
         if (!piece) continue;
         const entry = deserializePilotEntry(piece);
-        if (!entry || !entry.name) continue;
-        pilotSummaryCache.set(buildPilotCacheKey(entry.name), entry);
-        importedNames.push(entry.name);
+        if (!entry || !entry.characterId) continue;
+        importedEntries.push(entry);
       }
 
+      if (!importedEntries.length) return false;
+
+      pilotSummaryCache.clear();
+      for (const entry of importedEntries) {
+        pilotSummaryCache.set(buildPilotCacheKey(entry.name), entry);
+      }
       evictOldestPilotCacheEntries();
 
-      if (importedNames.length) {
-        namesEl.value = importedNames.join('\n');
+      const fallbackNames = importedEntries.map(entry => entry.name);
+      const renderFallback = () => {
+        namesEl.value = fallbackNames.join('\n');
+        rerenderFromCacheOnly();
+      };
+
+      let namesResolvedQuickly = false;
+      let fallbackRendered = false;
+
+      const resolveNamesPromise = resolveCharacterNames(importedEntries.map(entry => entry.characterId))
+        .then(idToName => {
+          for (const entry of importedEntries) {
+            const resolvedName = idToName.get(entry.characterId);
+            if (!resolvedName) continue;
+
+            pilotSummaryCache.delete(buildPilotCacheKey(entry.name));
+            entry.name = resolvedName;
+            pilotSummaryCache.set(buildPilotCacheKey(entry.name), entry);
+          }
+
+          evictOldestPilotCacheEntries();
+          namesEl.value = importedEntries.map(entry => entry.name).join('\n');
+
+          if (fallbackRendered || namesResolvedQuickly) {
+            rerenderFromCacheOnly();
+            setShareStatus('Loaded shared scan data from the link.');
+          }
+
+          return true;
+        })
+        .catch(error => {
+          console.error(error);
+          return false;
+        });
+
+      const quickResult = await Promise.race([
+        resolveNamesPromise,
+        sleep(1500).then(() => false)
+      ]);
+
+      if (quickResult) {
+        namesResolvedQuickly = true;
+        namesEl.value = importedEntries.map(entry => entry.name).join('\n');
         rerenderFromCacheOnly();
         setShareStatus('Loaded shared scan data from the link.');
         return true;
       }
 
-      return false;
+      fallbackRendered = true;
+      renderFallback();
+      setShareStatus('Loaded shared scan data from the link. Pilot names are still resolving...');
+      resolveNamesPromise.then(resolved => {
+        if (resolved) {
+          setShareStatus('Loaded shared scan data from the link.');
+        } else {
+          setShareStatus('Loaded shared scan data from the link. Some pilot names could not be resolved.');
+        }
+      });
+
+      return true;
     }
 
     async function shortenUrl(longUrl) {
@@ -1050,6 +1234,7 @@ Random Space Pirate"></textarea>
 
       const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
       try {
+        console.log(shareUrl)
         let shortUrl = await shortenUrl(shareUrl)
         await navigator.clipboard.writeText(shortUrl);
         setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
@@ -1077,6 +1262,10 @@ Random Space Pirate"></textarea>
         highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
       };
       const spaceFilter = spaceFilterEl.value;
+      const filterOptions = {
+        includeStructures: includeStructuresEl.checked,
+        includeDeployables: includeDeployablesEl.checked
+      };
 
       prunePilotCache();
       if (showProgress) setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
@@ -1098,7 +1287,7 @@ Random Space Pirate"></textarea>
         if (afterMonths > beforeMonths) fetchedNewMonthBuckets += (afterMonths - beforeMonths);
         else reusedFullyCached += 1;
 
-        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter));
+        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, filterOptions));
         renderResults(results);
       }
 
@@ -1147,12 +1336,16 @@ Random Space Pirate"></textarea>
         highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
       };
       const spaceFilter = spaceFilterEl.value;
+      const filterOptions = {
+        includeStructures: includeStructuresEl.checked,
+        includeDeployables: includeDeployablesEl.checked
+      };
 
       const results = [];
       for (const name of names) {
         const entry = pilotSummaryCache.get(buildPilotCacheKey(name));
         if (!entry) continue;
-        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter));
+        results.push(summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, filterOptions));
       }
 
       if (results.length > 0) {
@@ -1186,6 +1379,16 @@ Random Space Pirate"></textarea>
       setShareStatus('');
     });
 
+    includeStructuresEl.addEventListener('change', () => {
+      rerenderFromCacheOnly();
+      setShareStatus('');
+    });
+
+    includeDeployablesEl.addEventListener('change', () => {
+      rerenderFromCacheOnly();
+      setShareStatus('');
+    });
+
     analyzeBtn.addEventListener('click', analyze);
     if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
 
@@ -1203,10 +1406,16 @@ Random Space Pirate"></textarea>
     });
 
     window.addEventListener('hashchange', () => {
-      loadSharePayloadFromHash();
+      loadSharePayloadFromHash().catch(error => {
+        console.error(error);
+        setShareStatus('Could not load shared scan data from the link.');
+      });
     });
 
-    loadSharePayloadFromHash();
+    loadSharePayloadFromHash().catch(error => {
+      console.error(error);
+      setShareStatus('Could not load shared scan data from the link.');
+    });
   </script>
 
 
