@@ -217,7 +217,7 @@
       vertical-align: top;
     }
 
-    tbody tr:hover {
+    tbody tr.data-row:hover {
       background: rgba(255, 255, 255, 0.025);
     }
 
@@ -549,9 +549,6 @@
         content: 'Threat';
       }
 
-      tbody td:nth-child(5)::before {
-        content: 'Notes';
-      }
     }
 
     /* Design refresh */
@@ -696,7 +693,7 @@
       transition: transform 0.18s ease, background 0.18s ease, opacity 0.18s ease;
     }
 
-    tbody tr:nth-child(odd) {
+    tbody tr.data-row:nth-child(odd) {
       background: rgba(255, 255, 255, 0.015);
     }
 
@@ -747,7 +744,32 @@
     }
 
     .intel-tags {
-      gap: 7px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .intel-row td {
+      padding: 8px;
+      border-bottom: 1px solid rgb(255 255 255 / 50%);
+    }
+
+    .intel-tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      min-height: 20px;
+      padding: 2px 0 0;
+    }
+
+    .intel-tags-row:empty {
+      display: none;
+    }
+
+    tbody tr.data-row td {
+      border-bottom: 0;
     }
 
     .mini-pill {
@@ -885,6 +907,37 @@
         width: min(320px, 84vw);
       }
     }
+
+    .kofi-tip {
+      position: fixed;
+      bottom: 16px;
+      right: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: rgba(210, 225, 255, 0.8);
+      text-decoration: none;
+
+      background: rgba(30, 45, 90, 0.45);
+      border: 1px solid rgba(111, 168, 255, 0.18);
+
+      padding: 6px 12px;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+
+      transition: all 0.2s ease;
+      z-index: 9999;
+      opacity: 0.85;
+    }
+
+    .kofi-tip:hover {
+      color: #ffffff;
+      background: rgba(70, 110, 200, 0.65);
+      border-color: rgba(111, 168, 255, 0.4);
+      transform: translateY(-1px);
+      opacity: 1;
+    }
   </style>
 </head>
 
@@ -1004,12 +1057,11 @@ Random Space Pirate"></textarea>
                 <th>Kills</th>
                 <th>Pod Kills</th>
                 <th>Threat</th>
-                <th>Intel</th>
               </tr>
             </thead>
             <tbody id="resultsBody">
               <tr>
-                <td colspan="5" class="note">Results will appear here.</td>
+                <td colspan="4" class="note">Results will appear here.</td>
               </tr>
             </tbody>
           </table>
@@ -1828,7 +1880,7 @@ Random Space Pirate"></textarea>
     function renderResults(rows) {
       hideGlobalRowHoverCard();
       if (!rows.length) {
-        resultsBody.innerHTML = `<tr><td colspan="5" class="note">Results will appear here.</td></tr>`;
+        resultsBody.innerHTML = `<tr><td colspan="4" class="note">Results will appear here.</td></tr>`;
         renderIntelSummary([]);
         return;
       }
@@ -1890,7 +1942,7 @@ Random Space Pirate"></textarea>
           : (row.hoverNotes || row.notes || 'No extra notes available.');
 
         return `
-          <tr class="${rowClasses.join(' ')}" data-hover-threat="${escapeHtml(hoverThreat)}" data-hover-notes="${escapeHtml(hoverNotes)}">
+          <tr class="data-row ${rowClasses.join(' ')}" data-hover-threat="${escapeHtml(hoverThreat)}" data-hover-notes="${escapeHtml(hoverNotes)}">
             <td class="row-tooltip-anchor">
               <div class="pilot-cell">
                 <a class="pilot-name-link" href="${escapeHtml(nameHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(pilotName)}</a>
@@ -1899,7 +1951,11 @@ Random Space Pirate"></textarea>
             <td>${killsMarkup}</td>
             <td>${podsMarkup}</td>
             <td><div class="threat-cell">${threatMarkup}</div></td>
-            <td><div class="intel-tags">${intelBits.join('')}</div></td>
+          </tr>
+          <tr class="intel-row ${row.isLoading ? 'row-loading' : ''}">
+            <td colspan="4" class="intel-cell">
+              <div class="intel-tags intel-tags-row">${intelBits.join('')}</div>
+            </td>
           </tr>
         `;
       }).join('');
@@ -2598,6 +2654,9 @@ Random Space Pirate"></textarea>
     }
   </script>
 
+  <a href="https://ko-fi.com/coopercooper50" target="_blank" class="kofi-tip">
+    ☕ If this saved your ship, consider a tip
+  </a>
 
 </body>
 
