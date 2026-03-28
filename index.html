@@ -1042,11 +1042,19 @@ Random Space Pirate"></textarea>
 
       const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
       try {
-        await navigator.clipboard.writeText(shareUrl);
+        await navigator.clipboard.writeText(shortenUrl(shareUrl));
         setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
       } catch (error) {
         setShareStatus(`Could not copy automatically. Use this link: ${shareUrl}`);
       }
+    }
+
+    async function shortenUrl(longUrl) {
+      const res = await fetch(
+        `https://is.gd/create.php?format=json&url=${encodeURIComponent(longUrl)}`
+      );
+      const data = await res.json();
+      return data.shorturl;
     }
 
     async function collectResultsFromCurrentInputs(showProgress = true) {
