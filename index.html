@@ -966,7 +966,8 @@ Random Space Pirate"></textarea>
         <div id="status" class="status"></div>
         <div id="shareStatus" class="meta"></div>
         <div class="meta">
-          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute on separate queues,
+          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute on
+          separate queues,
           caches the last 50 pilot
           lookups for 1 hour, filters kills by the selected space type using zKill location labels, and can include or
           exclude deployable and structure kills in both the live view and shared links.
@@ -1659,7 +1660,7 @@ Random Space Pirate"></textarea>
 
       for (let i = 0; i < missingMonths.length; i++) {
         const monthInfo = missingMonths[i];
-        setStatus(`Pilot ${pilotCounts} • Pulling zKill for ${pilot.name} (${i + 1}/${missingMonths.length} month(s) needed)... pacing requests to about ${REQUESTS_PER_MINUTE} per minute.`);
+        setStatus(`Pilot ${pilotCounts} • Pulling zKill for ${pilot.name} (${i + 1}/${missingMonths.length} month(s) needed)... pacing requests to about ${ZKILL_REQUESTS_PER_MINUTE} per minute.`);
         const kills = await fetchCharacterKillsForMonth(pilot.characterId, monthInfo.year, monthInfo.month, 1);
         const counts = await summarizeKillsForMonth(kills);
         entry.months[monthInfo.monthKey] = counts;
