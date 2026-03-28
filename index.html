@@ -521,6 +521,8 @@ Random Space Pirate"></textarea>
     const REQUEST_INTERVAL_MS = Math.ceil(60000 / REQUESTS_PER_MINUTE);
     const CACHE_TTL_MS = 60 * 60 * 1000;
     const CACHE_MAX_ENTRIES = 50;
+    const LOCAL_STORAGE_CACHE_KEY = 'eveThreatCache';
+    const LOCAL_STORAGE_UI_KEY = 'eveThreatUiState';
 
     const SPACE_ORDER = [
       ['a', 'all'],
@@ -562,6 +564,87 @@ Random Space Pirate"></textarea>
 
     function setShareStatus(message) {
       if (shareStatusEl) shareStatusEl.textContent = message;
+    }
+
+    function saveCacheToLocalStorage() {
+      try {
+        prunePilotCache();
+        const serialized = Object.fromEntries(pilotSummaryCache.entries());
+        localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(serialized));
+      } catch (error) {
+        console.warn('Failed to save pilot cache to localStorage.', error);
+      }
+    }
+
+    function loadCacheFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_CACHE_KEY);
+        if (!raw) return false;
+
+        const parsed = JSON.parse(raw);
+        pilotSummaryCache.clear();
+        for (const [key, entry] of Object.entries(parsed || {})) {
+          if (!entry || typeof entry !== 'object') continue;
+          pilotSummaryCache.set(key, entry);
+        }
+
+        prunePilotCache();
+        return pilotSummaryCache.size > 0;
+      } catch (error) {
+        console.warn('Failed to load pilot cache from localStorage.', error);
+        return false;
+      }
+    }
+
+    function getUiState() {
+      return {
+        names: namesEl.value || '',
+        monthsBack: monthsBackEl.value,
+        spaceFilter: spaceFilterEl.value,
+        highThreatKills: highThreatKillsEl.value,
+        highThreatPods: highThreatPodsEl.value,
+        includeStructures: includeStructuresEl.checked,
+        includeDeployables: includeDeployablesEl.checked
+      };
+    }
+
+    function saveUiStateToLocalStorage() {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_UI_KEY, JSON.stringify(getUiState()));
+      } catch (error) {
+        console.warn('Failed to save UI state to localStorage.', error);
+      }
+    }
+
+    function loadUiStateFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_UI_KEY);
+        if (!raw) return false;
+
+        const state = JSON.parse(raw);
+        if (!state || typeof state !== 'object') return false;
+
+        if (typeof state.names === 'string') namesEl.value = state.names;
+        if (state.monthsBack) monthsBackEl.value = String(state.monthsBack);
+        if (state.spaceFilter) spaceFilterEl.value = String(state.spaceFilter);
+        if (state.highThreatKills !== undefined) highThreatKillsEl.value = String(state.highThreatKills);
+        if (state.highThreatPods !== undefined) highThreatPodsEl.value = String(state.highThreatPods);
+        if (typeof state.includeStructures === 'boolean') includeStructuresEl.checked = state.includeStructures;
+        if (typeof state.includeDeployables === 'boolean') includeDeployablesEl.checked = state.includeDeployables;
+        return true;
+      } catch (error) {
+        console.warn('Failed to load UI state from localStorage.', error);
+        return false;
+      }
+    }
+
+    function clearLocalStorageState() {
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_CACHE_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_UI_KEY);
+      } catch (error) {
+        console.warn('Failed to clear localStorage state.', error);
+      }
     }
 
     function sleep(ms) {
@@ -841,6 +924,7 @@ Random Space Pirate"></textarea>
 
       touchPilotCacheEntry(cacheKey);
       evictOldestPilotCacheEntries();
+      saveCacheToLocalStorage();
       return entry;
     }
 
@@ -867,6 +951,7 @@ Random Space Pirate"></textarea>
         const counts = await summarizeKillsForMonth(kills);
         entry.months[monthInfo.monthKey] = counts;
         entry.cachedAt = Date.now();
+        saveCacheToLocalStorage();
       }
 
       touchPilotCacheEntry(cacheKey);
@@ -1154,6 +1239,7 @@ Random Space Pirate"></textarea>
         pilotSummaryCache.set(buildPilotCacheKey(entry.name), entry);
       }
       evictOldestPilotCacheEntries();
+      saveCacheToLocalStorage();
 
       const fallbackNames = importedEntries.map(entry => entry.name);
       const renderFallback = () => {
@@ -1309,6 +1395,8 @@ Random Space Pirate"></textarea>
 
       try {
         await collectResultsFromCurrentInputs(true);
+        saveUiStateToLocalStorage();
+        saveCacheToLocalStorage();
       } catch (error) {
         console.error(error);
         setStatus(`Error: ${error.message}`);
@@ -1356,35 +1444,42 @@ Random Space Pirate"></textarea>
 
     namesEl.addEventListener('input', () => {
       prunePilotCache();
+      saveUiStateToLocalStorage();
       setShareStatus('');
     });
 
     monthsBackEl.addEventListener('change', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
 
     highThreatKillsEl.addEventListener('input', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
 
     highThreatPodsEl.addEventListener('input', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
 
     spaceFilterEl.addEventListener('change', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
 
     includeStructuresEl.addEventListener('change', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
 
     includeDeployablesEl.addEventListener('change', () => {
+      saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
     });
@@ -1398,6 +1493,7 @@ Random Space Pirate"></textarea>
       setStatus('');
       setShareStatus('');
       pilotSummaryCache.clear();
+      clearLocalStorageState();
       renderResults([]);
       sumPilots.textContent = '0';
       sumThreats.textContent = '0';
@@ -1412,10 +1508,32 @@ Random Space Pirate"></textarea>
       });
     });
 
+    window.addEventListener('storage', (event) => {
+      if (event.key === LOCAL_STORAGE_CACHE_KEY) {
+        loadCacheFromLocalStorage();
+        rerenderFromCacheOnly();
+      }
+
+      if (event.key === LOCAL_STORAGE_UI_KEY) {
+        const hadHash = String(location.hash || '').startsWith('#scan=');
+        if (!hadHash) {
+          loadUiStateFromLocalStorage();
+          rerenderFromCacheOnly();
+        }
+      }
+    });
+
+    loadCacheFromLocalStorage();
+    const hadSavedUiState = loadUiStateFromLocalStorage();
+
     loadSharePayloadFromHash().catch(error => {
       console.error(error);
       setShareStatus('Could not load shared scan data from the link.');
     });
+
+    if (!String(location.hash || '').startsWith('#scan=') && hadSavedUiState) {
+      rerenderFromCacheOnly();
+    }
   </script>
 
 
