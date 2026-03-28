@@ -1033,6 +1033,14 @@ Random Space Pirate"></textarea>
       return false;
     }
 
+    async function shortenUrl(longUrl) {
+      const res = await fetch(
+        `https://is.gd/create.php?format=json&url=${encodeURIComponent(longUrl)}`
+      );
+      const data = await res.json();
+      return data.shorturl;
+    }
+
     async function copyShareLink() {
       const payload = buildSharePayloadFromCurrentView();
       if (!payload) {
@@ -1042,20 +1050,13 @@ Random Space Pirate"></textarea>
 
       const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
       try {
-        let shortenUrl = await shortenUrl(shareUrl)
-        await navigator.clipboard.writeText(shortenUrl);
+        let shortUrl = await shortenUrl(shareUrl)
+        await navigator.clipboard.writeText(shortUrl);
         setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
       } catch (error) {
         setShareStatus(`Could not copy automatically. Use this link: ${shareUrl}`);
+        console.error(error)
       }
-    }
-
-    async function shortenUrl(longUrl) {
-      const res = await fetch(
-        `https://is.gd/create.php?format=json&url=${encodeURIComponent(longUrl)}`
-      );
-      const data = await res.json();
-      return data.shorturl;
     }
 
     async function collectResultsFromCurrentInputs(showProgress = true) {
