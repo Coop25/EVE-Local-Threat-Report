@@ -432,53 +432,47 @@
     }
 
     .row-tooltip-anchor {
-      position: relative;
+      position: static;
     }
 
-    .row-hover-card {
-      position: absolute;
+    .global-row-hover-card {
+      position: fixed;
       left: 0;
-      top: calc(100% + 10px);
-      width: min(420px, 72vw);
+      top: 0;
+      width: min(420px, calc(100vw - 24px));
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid var(--border);
-      background: rgba(7, 12, 26, 0.97);
+      background: rgba(7, 12, 26, 0.98);
       box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
       transform: translateY(6px);
       transition: opacity 0.16s ease, visibility 0.16s ease, transform 0.16s ease;
-      z-index: 30;
+      z-index: 2147483647;
       text-align: left;
     }
 
-    tbody tr:hover .row-hover-card {
+    .global-row-hover-card.visible {
       opacity: 1;
       visibility: visible;
       transform: translateY(0);
     }
 
-    .row-hover-card.force-hide {
-      opacity: 0 !important;
-      visibility: hidden !important;
-      transform: translateY(6px) !important;
-    }
-
-    .row-hover-card strong {
+    .global-row-hover-card strong {
       display: block;
       margin-bottom: 5px;
       color: #dfe8ff;
     }
 
-    .row-hover-card .tooltip-section+.tooltip-section {
+    .global-row-hover-card .tooltip-section+.tooltip-section {
       margin-top: 10px;
       padding-top: 10px;
       border-top: 1px solid rgba(45, 60, 113, 0.55);
     }
 
-    .row-hover-card .tooltip-copy {
+    .global-row-hover-card .tooltip-copy {
       color: var(--muted);
       line-height: 1.45;
       font-size: 0.9rem;
@@ -882,6 +876,14 @@
         transform: none;
         width: min(280px, 72vw);
       }
+
+      .global-row-hover-card {
+        left: auto;
+        right: 0;
+        top: auto;
+        bottom: calc(100% + 8px);
+        width: min(320px, 84vw);
+      }
     }
   </style>
 </head>
@@ -964,7 +966,7 @@ Random Space Pirate"></textarea>
         <div id="status" class="status"></div>
         <div id="shareStatus" class="meta"></div>
         <div class="meta">
-          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute,
+          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute on separate queues,
           caches the last 50 pilot
           lookups for 1 hour, filters kills by the selected space type using zKill location labels, and can include or
           exclude deployable and structure kills in both the live view and shared links.
@@ -1022,7 +1024,7 @@ Random Space Pirate"></textarea>
     </div>
   </div>
 
-
+  <div id="globalRowHoverCard" class="global-row-hover-card" aria-hidden="true"></div>
 
   <script>
     const CAPSULE_GROUP_ID = 29;
@@ -1034,8 +1036,12 @@ Random Space Pirate"></textarea>
     const ESI_CHARACTER_URL = 'https://esi.evetech.net/latest/characters/';
     const ZKILL_API_BASE = 'https://zkillboard.com/api';
 
-    const REQUESTS_PER_MINUTE = 50;
-    const REQUEST_INTERVAL_MS = Math.ceil(60000 / REQUESTS_PER_MINUTE);
+    const ZKILL_REQUESTS_PER_MINUTE = 50;
+    const ESI_REQUESTS_PER_MINUTE = 90;
+    const REQUEST_INTERVALS_MS = {
+      zkill: Math.ceil(60000 / ZKILL_REQUESTS_PER_MINUTE),
+      esi: Math.ceil(60000 / ESI_REQUESTS_PER_MINUTE)
+    };
     const CACHE_TTL_MS = 60 * 60 * 1000;
     const CACHE_MAX_ENTRIES = 50;
     const LOCAL_STORAGE_CACHE_KEY = 'eveThreatCache';
@@ -1050,7 +1056,7 @@ Random Space Pirate"></textarea>
     ];
 
     const reqPerMinEl = document.getElementById('reqPerMin');
-    if (reqPerMinEl) reqPerMinEl.textContent = REQUESTS_PER_MINUTE;
+    if (reqPerMinEl) reqPerMinEl.textContent = `${ZKILL_REQUESTS_PER_MINUTE} zKill / ${ESI_REQUESTS_PER_MINUTE} ESI`;
 
     const namesEl = document.getElementById('names');
     const monthsBackEl = document.getElementById('monthsBack');
@@ -1071,12 +1077,17 @@ Random Space Pirate"></textarea>
     const sumKills = document.getElementById('sumKills');
     const sumPods = document.getElementById('sumPods');
     const intelSummaryEl = document.getElementById('intelSummary');
+    const globalRowHoverCardEl = document.getElementById('globalRowHoverCard');
 
     const typeCache = new Map();
     const pilotSummaryCache = new Map();
     const characterInfoCache = new Map();
-    const requestQueueState = { nextAvailableAt: 0 };
+    const requestQueueState = {
+      zkill: { nextAvailableAt: 0 },
+      esi: { nextAvailableAt: 0 }
+    };
     let currentAnalysisToken = 0;
+    let hoveredRowEl = null;
 
     function setStatus(message) {
       statusEl.textContent = message;
@@ -1171,11 +1182,19 @@ Random Space Pirate"></textarea>
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async function waitForRequestSlot() {
+    function getServiceKeyForUrl(url) {
+      const normalized = String(url || '').toLowerCase();
+      if (normalized.includes('zkillboard.com')) return 'zkill';
+      return 'esi';
+    }
+
+    async function waitForRequestSlot(serviceKey = 'esi') {
+      const queue = requestQueueState[serviceKey] || requestQueueState.esi;
+      const intervalMs = REQUEST_INTERVALS_MS[serviceKey] || REQUEST_INTERVALS_MS.esi;
       const now = Date.now();
-      const waitMs = Math.max(0, requestQueueState.nextAvailableAt - now);
+      const waitMs = Math.max(0, queue.nextAvailableAt - now);
       if (waitMs > 0) await sleep(waitMs);
-      requestQueueState.nextAvailableAt = Math.max(requestQueueState.nextAvailableAt, Date.now()) + REQUEST_INTERVAL_MS;
+      queue.nextAvailableAt = Math.max(queue.nextAvailableAt, Date.now()) + intervalMs;
     }
 
     function normalizeNames(raw) {
@@ -1298,13 +1317,16 @@ Random Space Pirate"></textarea>
     }
 
     async function fetchJson(url, options = {}, attempt = 0) {
-      await waitForRequestSlot();
+      const serviceKey = getServiceKeyForUrl(url);
+      await waitForRequestSlot(serviceKey);
 
       const response = await fetch(url, options);
       if (response.status === 429 && attempt < 5) {
         const delayMs = getRetryDelayMs(response, attempt);
-        requestQueueState.nextAvailableAt = Math.max(requestQueueState.nextAvailableAt, Date.now() + delayMs);
-        setStatus(`Rate limited. Cooling down for ${Math.ceil(delayMs / 1000)}s...`);
+        const queue = requestQueueState[serviceKey] || requestQueueState.esi;
+        queue.nextAvailableAt = Math.max(queue.nextAvailableAt, Date.now() + delayMs);
+        const serviceLabel = serviceKey === 'zkill' ? 'zKillboard' : 'ESI';
+        setStatus(`${serviceLabel} rate limited. Cooling down for ${Math.ceil(delayMs / 1000)}s...`);
         await sleep(delayMs);
         return fetchJson(url, options, attempt + 1);
       }
@@ -1768,25 +1790,42 @@ Random Space Pirate"></textarea>
       if (!intelSummaryEl) return;
 
       const fleetRows = rows.filter(row => row.fleetSignal);
-      const sharedCorpRows = rows.filter(row => row.corpGroupCount >= 2);
+      const sharedCorpRows = rows.filter(row => row.corpGroupCount >= 2 && row.corpName);
       const topFleet = fleetRows[0];
 
       if (!fleetRows.length && !sharedCorpRows.length) {
-        intelSummaryEl.textContent = '';
+        intelSummaryEl.innerHTML = '';
         intelSummaryEl.classList.add('hidden');
         return;
       }
 
-      const bits = [];
-      if (topFleet) bits.push(`Possible fleet detected: ${topFleet.fleetSignal}.`);
-      const corpNames = [...new Set(sharedCorpRows.map(row => row.corpName).filter(Boolean))];
-      if (corpNames.length) bits.push(`Shared corporations in local: ${corpNames.join(', ')}.`);
+      const uniqueCorpRows = [];
+      const seenCorpNames = new Set();
+      for (const row of sharedCorpRows) {
+        if (seenCorpNames.has(row.corpName)) continue;
+        seenCorpNames.add(row.corpName);
+        uniqueCorpRows.push(row);
+      }
 
-      intelSummaryEl.textContent = bits.join(' ');
+      const parts = [];
+      if (topFleet) {
+        parts.push(`<span>Possible fleet detected: ${escapeHtml(topFleet.fleetSignal)}.</span>`);
+      }
+
+      if (uniqueCorpRows.length) {
+        const corpTags = uniqueCorpRows.map(row => {
+          const corpStyle = escapeHtml(getNameColorStyle(row.corpName));
+          return `<span class="mini-pill profile" style="${corpStyle}">${row.corpGroupCount}x ${escapeHtml(row.corpName)}</span>`;
+        }).join(' ');
+        parts.push(`<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;"><span>Shared corporations in local:</span>${corpTags}</div>`);
+      }
+
+      intelSummaryEl.innerHTML = parts.join(' ');
       intelSummaryEl.classList.remove('hidden');
     }
 
     function renderResults(rows) {
+      hideGlobalRowHoverCard();
       if (!rows.length) {
         resultsBody.innerHTML = `<tr><td colspan="5" class="note">Results will appear here.</td></tr>`;
         renderIntelSummary([]);
@@ -1850,20 +1889,10 @@ Random Space Pirate"></textarea>
           : (row.hoverNotes || row.notes || 'No extra notes available.');
 
         return `
-          <tr class="${rowClasses.join(' ')}">
+          <tr class="${rowClasses.join(' ')}" data-hover-threat="${escapeHtml(hoverThreat)}" data-hover-notes="${escapeHtml(hoverNotes)}">
             <td class="row-tooltip-anchor">
               <div class="pilot-cell">
                 <a class="pilot-name-link" href="${escapeHtml(nameHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(pilotName)}</a>
-                <div class="row-hover-card">
-                  <div class="tooltip-section">
-                    <strong>Why this threat level</strong>
-                    <div class="tooltip-copy">${escapeHtml(hoverThreat)}</div>
-                  </div>
-                  <div class="tooltip-section">
-                    <strong>Scan notes</strong>
-                    <div class="tooltip-copy">${escapeHtml(hoverNotes)}</div>
-                  </div>
-                </div>
               </div>
             </td>
             <td>${killsMarkup}</td>
@@ -2279,7 +2308,7 @@ Random Space Pirate"></textarea>
         const placeholder = progressiveRows[index];
         if (placeholder.characterId) {
           placeholder.loadingStage = 'zkill';
-          renderResults(progressiveRows);
+          rerenderProgressive();
         }
 
         const cacheKey = buildPilotCacheKey(pilot.name);
@@ -2325,11 +2354,8 @@ Random Space Pirate"></textarea>
       analyzeBtn.disabled = true;
       if (shareBtn) shareBtn.disabled = true;
       clearBtn.disabled = true;
-      renderResults([]);
-      sumPilots.textContent = '0';
-      sumThreats.textContent = '0';
-      sumKills.textContent = '0';
-      sumPods.textContent = '0';
+      setStatus('Starting scan...');
+      setShareStatus('');
 
       try {
         await collectResultsFromCurrentInputs(true);
@@ -2451,37 +2477,96 @@ Random Space Pirate"></textarea>
       });
     });
 
-    function hideAllRowHoverCards() {
-      document.querySelectorAll('.row-hover-card').forEach(card => {
-        card.classList.add('force-hide');
-      });
+    function buildGlobalHoverCardHtml(row) {
+      if (!row) return '';
+      const threat = row.dataset.hoverThreat || 'Threat explanation not available yet.';
+      const notes = row.dataset.hoverNotes || 'No extra notes available.';
+      return `
+        <div class="tooltip-section">
+          <strong>Why this threat level</strong>
+          <div class="tooltip-copy">${threat}</div>
+        </div>
+        <div class="tooltip-section">
+          <strong>Scan notes</strong>
+          <div class="tooltip-copy">${notes}</div>
+        </div>
+      `;
     }
 
-    function clearForcedHiddenRowHoverCards() {
-      document.querySelectorAll('.row-hover-card.force-hide').forEach(card => {
-        card.classList.remove('force-hide');
-      });
+    function hideGlobalRowHoverCard() {
+      hoveredRowEl = null;
+      if (!globalRowHoverCardEl) return;
+      globalRowHoverCardEl.classList.remove('visible');
+      globalRowHoverCardEl.setAttribute('aria-hidden', 'true');
     }
+
+    function positionGlobalRowHoverCard(row) {
+      if (!row || !globalRowHoverCardEl) return;
+      const rowRect = row.getBoundingClientRect();
+      const popupRect = globalRowHoverCardEl.getBoundingClientRect();
+      const gap = 10;
+      const margin = 8;
+      let top = rowRect.bottom + gap;
+      if (top + popupRect.height > window.innerHeight - margin) {
+        top = rowRect.top - popupRect.height - gap;
+      }
+      if (top < margin) {
+        top = Math.max(margin, Math.min(window.innerHeight - popupRect.height - margin, rowRect.bottom + gap));
+      }
+      let left = rowRect.left + 8;
+      if (left + popupRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - popupRect.width - margin;
+      }
+      left = Math.max(margin, left);
+      globalRowHoverCardEl.style.top = `${Math.round(top)}px`;
+      globalRowHoverCardEl.style.left = `${Math.round(left)}px`;
+    }
+
+    function showGlobalRowHoverCard(row) {
+      if (!row || !globalRowHoverCardEl) return;
+      hoveredRowEl = row;
+      globalRowHoverCardEl.innerHTML = buildGlobalHoverCardHtml(row);
+      globalRowHoverCardEl.classList.add('visible');
+      globalRowHoverCardEl.setAttribute('aria-hidden', 'false');
+      positionGlobalRowHoverCard(row);
+    }
+
+    resultsBody.addEventListener('mousemove', (event) => {
+      const row = event.target.closest('tr[data-hover-threat]');
+      if (!row || !resultsBody.contains(row)) {
+        hideGlobalRowHoverCard();
+        return;
+      }
+      if (hoveredRowEl !== row) {
+        showGlobalRowHoverCard(row);
+        return;
+      }
+      positionGlobalRowHoverCard(row);
+    });
+
+    resultsBody.addEventListener('mouseleave', () => {
+      hideGlobalRowHoverCard();
+    });
 
     document.addEventListener('click', (event) => {
       if (event.target.closest('.pilot-name-link')) {
-        hideAllRowHoverCards();
+        hideGlobalRowHoverCard();
       }
     });
 
-    document.addEventListener('mousemove', () => {
-      clearForcedHiddenRowHoverCards();
+    window.addEventListener('blur', hideGlobalRowHoverCard);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) hideGlobalRowHoverCard();
     });
 
-    document.addEventListener('mouseleave', (event) => {
-      if (event.target.closest && event.target.closest('tr')) {
-        hideAllRowHoverCards();
-      }
+    window.addEventListener('scroll', () => {
+      if (hoveredRowEl && document.body.contains(hoveredRowEl)) positionGlobalRowHoverCard(hoveredRowEl);
+      else hideGlobalRowHoverCard();
     }, true);
 
-    window.addEventListener('blur', hideAllRowHoverCards);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) hideAllRowHoverCards();
+    window.addEventListener('resize', () => {
+      if (hoveredRowEl && document.body.contains(hoveredRowEl)) positionGlobalRowHoverCard(hoveredRowEl);
+      else hideGlobalRowHoverCard();
     });
 
     window.addEventListener('storage', (event) => {
