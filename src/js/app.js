@@ -1,0 +1,272 @@
+/* High-level scan orchestration, rerendering, and startup event wiring. */
+
+// Resolve names, progressively load pilot summaries, and rerender as data arrives.
+async function collectResultsFromCurrentInputs(showProgress = true) {
+  const analysisToken = ++currentAnalysisToken;
+  const names = normalizeNames(namesEl.value);
+  if (!names.length) {
+    renderResults([]);
+    sumPilots.textContent = '0';
+    sumThreats.textContent = '0';
+    sumKills.textContent = '0';
+    sumGanks.textContent = '0';
+    if (showProgress) setStatus('Paste at least one pilot name first.');
+    return;
+  }
+
+  const monthsBack = Number(monthsBackEl.value);
+  const thresholds = {
+    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
+  };
+  const spaceFilter = spaceFilterEl.value;
+  const filterOptions = {
+    includeStructures: includeStructuresEl.checked,
+    includeDeployables: includeDeployablesEl.checked
+  };
+
+  prunePilotCache();
+  if (showProgress) setStatus(`Resolving ${names.length} pilot name(s) through ESI...`);
+  const pilots = await resolveCharacterIds(names);
+  if (analysisToken !== currentAnalysisToken) return;
+
+  const progressiveRows = pilots.map((pilot, index) => ({
+    name: pilot.name,
+    characterId: pilot.characterId || null,
+    zkillUrl: pilot.characterId ? `https://zkillboard.com/character/${pilot.characterId}/` : '#',
+    threat: 'warning',
+    kills: 0,
+    gankCount: 0,
+    notes: pilot.characterId ? 'Waiting for zKill data...' : 'Character name could not be resolved in ESI.',
+    isLoading: Boolean(pilot.characterId),
+    loadingStage: pilot.characterId ? 'queued' : 'done',
+    profilePending: false,
+    inputOrder: index
+  }));
+  renderResults(progressiveRows);
+
+  const loadedEntries = [];
+  const profileTasks = [];
+  let reusedFullyCached = 0;
+  let fetchedNewMonthBuckets = 0;
+
+  const rerenderProgressive = () => {
+    if (analysisToken !== currentAnalysisToken) return;
+    const groupContext = buildGroupContext(loadedEntries);
+    const finalizedRows = loadedEntries.map((entry) => {
+      const row = summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, filterOptions, groupContext);
+      row.profilePending = !(entry.corpName || entry.allianceName || entry.corpId || entry.allianceId);
+      row.inputOrder = names.findIndex(name => buildPilotCacheKey(name) === buildPilotCacheKey(entry.name));
+      return row;
+    });
+
+    const unresolvedRows = progressiveRows.filter(row => !row.characterId);
+    const loadingRows = progressiveRows.filter(
+      row => row.characterId && !loadedEntries.some(entry => entry.characterId === row.characterId)
+    );
+    renderResults([...finalizedRows, ...loadingRows, ...unresolvedRows]);
+  };
+
+  for (let index = 0; index < pilots.length; index++) {
+    const pilot = pilots[index];
+    const placeholder = progressiveRows[index];
+    if (placeholder.characterId) {
+      placeholder.loadingStage = 'zkill';
+      rerenderProgressive();
+    }
+
+    const cacheKey = buildPilotCacheKey(pilot.name);
+    const existing = pilotSummaryCache.get(cacheKey);
+    const beforeMonths = existing ? Object.keys(existing.months || {}).length : 0;
+
+    const entry = await ensurePilotMonthsCached(pilot, monthsBack, `${index + 1}/${pilots.length}`);
+    if (analysisToken !== currentAnalysisToken) return;
+
+    const afterMonths = Object.keys(entry.months || {}).length;
+    if (afterMonths > beforeMonths) fetchedNewMonthBuckets += (afterMonths - beforeMonths);
+    else reusedFullyCached += 1;
+
+    loadedEntries.push(entry);
+    rerenderProgressive();
+
+    if (entry.characterId && !(entry.corpName || entry.allianceName || entry.corpId || entry.allianceId)) {
+      const profileTask = ensurePilotProfileCached(entry)
+        .then(() => {
+          if (analysisToken !== currentAnalysisToken) return;
+          rerenderProgressive();
+        })
+        .catch(error => console.error(error));
+      profileTasks.push(profileTask);
+    }
+  }
+
+  const unresolved = progressiveRows.filter(r => !r.characterId).length;
+  if (showProgress) {
+    setStatus(`zKill scan done. ${loadedEntries.length} pilot(s) shown. ${reusedFullyCached} pilot cache hit(s). ${fetchedNewMonthBuckets} new month bucket(s) fetched.${unresolved ? ` ${unresolved} name(s) could not be resolved.` : ''} Filling in corp/alliance intel...`);
+  }
+
+  await Promise.allSettled(profileTasks);
+  if (analysisToken !== currentAnalysisToken) return;
+  rerenderProgressive();
+
+  if (showProgress) {
+    setStatus(`Done. ${loadedEntries.length} pilot(s) shown. ${reusedFullyCached} pilot cache hit(s). ${fetchedNewMonthBuckets} new month bucket(s) fetched.${unresolved ? ` ${unresolved} name(s) could not be resolved.` : ''}`);
+  }
+}
+
+async function analyze() {
+  analyzeBtn.disabled = true;
+  if (shareBtn) shareBtn.disabled = true;
+  clearBtn.disabled = true;
+  setStatus('Starting scan...');
+  setShareStatus('');
+
+  try {
+    await collectResultsFromCurrentInputs(true);
+    saveUiStateToLocalStorage();
+    saveCacheToLocalStorage();
+  } catch (error) {
+    console.error(error);
+    setStatus(`Error: ${error.message}`);
+  } finally {
+    analyzeBtn.disabled = false;
+    if (shareBtn) shareBtn.disabled = false;
+    clearBtn.disabled = false;
+  }
+}
+
+function rerenderFromCacheOnly() {
+  const names = normalizeNames(namesEl.value);
+  if (!names.length) {
+    renderResults([]);
+    sumPilots.textContent = '0';
+    sumThreats.textContent = '0';
+    sumKills.textContent = '0';
+    sumGanks.textContent = '0';
+    return;
+  }
+
+  const monthsBack = Number(monthsBackEl.value);
+  const thresholds = {
+    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
+  };
+  const spaceFilter = spaceFilterEl.value;
+  const filterOptions = {
+    includeStructures: includeStructuresEl.checked,
+    includeDeployables: includeDeployablesEl.checked
+  };
+
+  const entries = [];
+  for (const name of names) {
+    const entry = pilotSummaryCache.get(buildPilotCacheKey(name));
+    if (!entry) continue;
+    entries.push(entry);
+  }
+
+  const groupContext = buildGroupContext(entries);
+  const results = entries.map(entry => summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, filterOptions, groupContext));
+
+  if (results.length > 0) {
+    renderResults(results);
+    setStatus('Updated view from cached month summaries.');
+  } else {
+    renderResults([]);
+  }
+}
+
+// Persist UI changes so the tool can recover its last-used settings after refreshes.
+namesEl.addEventListener('input', () => {
+  prunePilotCache();
+  saveUiStateToLocalStorage();
+  setShareStatus('');
+});
+
+monthsBackEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+highThreatKillsEl.addEventListener('input', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+highThreatGanksEl.addEventListener('input', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+spaceFilterEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+includeStructuresEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+includeDeployablesEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+analyzeBtn.addEventListener('click', analyze);
+if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
+
+clearBtn.addEventListener('click', () => {
+  namesEl.value = '';
+  location.hash = '';
+  setStatus('');
+  setShareStatus('');
+  pilotSummaryCache.clear();
+  clearLocalStorageState();
+  renderResults([]);
+  sumPilots.textContent = '0';
+  sumThreats.textContent = '0';
+  sumKills.textContent = '0';
+  sumGanks.textContent = '0';
+  hideGlobalRowHoverCard();
+});
+
+window.addEventListener('hashchange', () => {
+  loadSharePayloadFromHash().catch(error => {
+    console.error(error);
+    setShareStatus('Could not load shared scan data from the link.');
+  });
+});
+
+window.addEventListener('storage', (event) => {
+  if (event.key === LOCAL_STORAGE_CACHE_KEY) {
+    loadCacheFromLocalStorage();
+    rerenderFromCacheOnly();
+  }
+
+  if (event.key === LOCAL_STORAGE_UI_KEY) {
+    const hadHash = String(location.hash || '').startsWith('#scan=');
+    if (!hadHash) {
+      loadUiStateFromLocalStorage();
+      rerenderFromCacheOnly();
+    }
+  }
+});
+
+// Boot sequence: restore local state, then optionally hydrate from a shared hash URL.
+loadCacheFromLocalStorage();
+const hadSavedUiState = loadUiStateFromLocalStorage();
+
+loadSharePayloadFromHash().catch(error => {
+  console.error(error);
+  setShareStatus('Could not load shared scan data from the link.');
+});
+
+if (!String(location.hash || '').startsWith('#scan=') && hadSavedUiState) {
+  rerenderFromCacheOnly();
+}
