@@ -542,7 +542,7 @@
       }
 
       tbody td:nth-child(3)::before {
-        content: 'Pod Kills';
+        content: 'Ganks';
       }
 
       tbody td:nth-child(4)::before {
@@ -643,6 +643,7 @@
     }
 
     .stat {
+      text-align: center;
       background: linear-gradient(180deg, rgba(24, 38, 78, 0.92), rgba(19, 30, 62, 0.94));
       border-color: rgba(111, 168, 255, 0.2);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -953,7 +954,8 @@
       </div>
       <div class="sub">
         Paste one pilot name per line, then pull recent zKillboard activity and flag characters who look dangerous. This
-        tool checks ship and pod kills for the selected month range, can filter by space type using zKill location
+        tool checks ship kills and gank labels for the selected month range, can filter by space type using zKill
+        location
         labels, and caches recent pilot lookups to reduce duplicate requests and help avoid rate limits.
       </div>
     </div>
@@ -995,8 +997,8 @@ Random Space Pirate"></textarea>
             <input id="highThreatKills" type="number" min="1" value="3" />
           </div>
           <div>
-            <label for="highThreatPods">High threat pod kills ≥</label>
-            <input id="highThreatPods" type="number" min="0" value="1" />
+            <label for="highThreatGanks">High threat ganks ≥</label>
+            <input id="highThreatGanks" type="number" min="0" value="1" />
           </div>
         </div>
 
@@ -1042,8 +1044,8 @@ Random Space Pirate"></textarea>
             <div class="v" id="sumKills">0</div>
           </div>
           <div class="stat">
-            <div class="k">Pod kills</div>
-            <div class="v" id="sumPods">0</div>
+            <div class="k">Ganks</div>
+            <div class="v" id="sumGanks">0</div>
           </div>
         </div>
 
@@ -1055,7 +1057,7 @@ Random Space Pirate"></textarea>
               <tr>
                 <th>Pilot</th>
                 <th>Kills</th>
-                <th>Pod Kills</th>
+                <th>Ganks</th>
                 <th>Threat</th>
               </tr>
             </thead>
@@ -1069,7 +1071,7 @@ Random Space Pirate"></textarea>
 
         <div class="note">
           Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
-          activity or pod kill count crosses your thresholds, <strong>warning</strong> if they have any recent activity
+          activity or gank count crosses your thresholds, <strong>warning</strong> if they have any recent activity
           but stay below those thresholds, and <strong>low</strong> if they show no recent kill activity in the chosen
           window.
         </div>
@@ -1080,12 +1082,10 @@ Random Space Pirate"></textarea>
   <div id="globalRowHoverCard" class="global-row-hover-card" aria-hidden="true"></div>
 
   <script>
-    const CAPSULE_GROUP_ID = 29;
     const STRUCTURE_CATEGORY_ID = 65;
     const DEPLOYABLE_CATEGORY_ID = 22;
     const ESI_IDS_URL = 'https://esi.evetech.net/latest/universe/ids/';
     const ESI_NAMES_URL = 'https://esi.evetech.net/latest/universe/names/';
-    const ESI_TYPE_URL = 'https://esi.evetech.net/latest/universe/types/';
     const ESI_CHARACTER_URL = 'https://esi.evetech.net/latest/characters/';
     const ZKILL_API_BASE = 'https://zkillboard.com/api';
 
@@ -1114,7 +1114,7 @@ Random Space Pirate"></textarea>
     const namesEl = document.getElementById('names');
     const monthsBackEl = document.getElementById('monthsBack');
     const highThreatKillsEl = document.getElementById('highThreatKills');
-    const highThreatPodsEl = document.getElementById('highThreatPods');
+    const highThreatGanksEl = document.getElementById('highThreatGanks');
     const spaceFilterEl = document.getElementById('spaceFilter');
     const includeStructuresEl = document.getElementById('includeStructures');
     const includeDeployablesEl = document.getElementById('includeDeployables');
@@ -1128,7 +1128,7 @@ Random Space Pirate"></textarea>
     const sumPilots = document.getElementById('sumPilots');
     const sumThreats = document.getElementById('sumThreats');
     const sumKills = document.getElementById('sumKills');
-    const sumPods = document.getElementById('sumPods');
+    const sumGanks = document.getElementById('sumGanks');
     const intelSummaryEl = document.getElementById('intelSummary');
     const globalRowHoverCardEl = document.getElementById('globalRowHoverCard');
 
@@ -1186,7 +1186,7 @@ Random Space Pirate"></textarea>
         monthsBack: monthsBackEl.value,
         spaceFilter: spaceFilterEl.value,
         highThreatKills: highThreatKillsEl.value,
-        highThreatPods: highThreatPodsEl.value,
+        highThreatGanks: highThreatGanksEl.value,
         includeStructures: includeStructuresEl.checked,
         includeDeployables: includeDeployablesEl.checked
       };
@@ -1212,7 +1212,8 @@ Random Space Pirate"></textarea>
         if (state.monthsBack) monthsBackEl.value = String(state.monthsBack);
         if (state.spaceFilter) spaceFilterEl.value = String(state.spaceFilter);
         if (state.highThreatKills !== undefined) highThreatKillsEl.value = String(state.highThreatKills);
-        if (state.highThreatPods !== undefined) highThreatPodsEl.value = String(state.highThreatPods);
+        if (state.highThreatGanks !== undefined) highThreatGanksEl.value = String(state.highThreatGanks);
+        else if (state.highThreatPods !== undefined) highThreatGanksEl.value = String(state.highThreatPods);
         if (typeof state.includeStructures === 'boolean') includeStructuresEl.checked = state.includeStructures;
         if (typeof state.includeDeployables === 'boolean') includeDeployablesEl.checked = state.includeDeployables;
         return true;
@@ -1344,7 +1345,7 @@ Random Space Pirate"></textarea>
       const includeDeployables = options.includeDeployables !== false;
       const lines = [
         `${counts.kills} filtered kill${counts.kills === 1 ? '' : 's'} in ${spaceFilter}.`,
-        `${counts.pods} pod kill${counts.pods === 1 ? '' : 's'}.`,
+        `${counts.ganks} gank${counts.ganks === 1 ? '' : 's'}.`,
         `${activityLabel}.`
       ];
 
@@ -1354,7 +1355,7 @@ Random Space Pirate"></textarea>
       if (!includeStructures && counts.structures > 0) lines.push(`Ignored ${counts.structures} structure kill${counts.structures === 1 ? '' : 's'}.`);
       if (!includeDeployables && counts.deployables > 0) lines.push(`Ignored ${counts.deployables} deployable kill${counts.deployables === 1 ? '' : 's'}.`);
       if (counts.kills >= thresholds.highThreatKills) lines.push(`Crossed kill threshold (${thresholds.highThreatKills}).`);
-      if (counts.pods >= thresholds.highThreatPods) lines.push(`Crossed pod threshold (${thresholds.highThreatPods}).`);
+      if (counts.ganks >= thresholds.highThreatGanks) lines.push(`Crossed gank threshold (${thresholds.highThreatGanks}).`);
       for (const signal of groupSignals) lines.push(signal);
       return lines.join(' ');
     }
@@ -1422,11 +1423,11 @@ Random Space Pirate"></textarea>
 
     function makeEmptyCounts() {
       return {
-        all: { kills: 0, pods: 0, structures: 0, deployables: 0, lastKillAt: null },
-        highsec: { kills: 0, pods: 0, structures: 0, deployables: 0, lastKillAt: null },
-        lowsec: { kills: 0, pods: 0, structures: 0, deployables: 0, lastKillAt: null },
-        nullsec: { kills: 0, pods: 0, structures: 0, deployables: 0, lastKillAt: null },
-        wormhole: { kills: 0, pods: 0, structures: 0, deployables: 0, lastKillAt: null }
+        all: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
+        highsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
+        lowsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
+        nullsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
+        wormhole: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null }
       };
     }
 
@@ -1546,20 +1547,6 @@ Random Space Pirate"></textarea>
       return byId;
     }
 
-    async function getTypeInfo(typeId) {
-      if (!typeId) return null;
-      if (typeCache.has(typeId)) return typeCache.get(typeId);
-
-      const promise = fetchJson(`${ESI_TYPE_URL}${typeId}/`).catch(() => null);
-      typeCache.set(typeId, promise);
-      return promise;
-    }
-
-    async function getVictimTypeInfo(victimShipTypeId) {
-      if (!victimShipTypeId) return null;
-      return getTypeInfo(victimShipTypeId);
-    }
-
     function getKillCategoryId(kill) {
       const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
       const catLabel = labels.find(label => typeof label === 'string' && label.startsWith('cat:'));
@@ -1613,9 +1600,8 @@ Random Space Pirate"></textarea>
       const counts = makeEmptyCounts();
 
       for (const kill of kills) {
-        const victimShipTypeId = kill.victim && kill.victim.ship_type_id ? kill.victim.ship_type_id : null;
-        const victimTypeInfo = await getVictimTypeInfo(victimShipTypeId);
-        const pod = Boolean(victimTypeInfo && victimTypeInfo.group_id === CAPSULE_GROUP_ID);
+        const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
+        const isGanked = labels.includes('ganked');
         const categoryId = getKillCategoryId(kill);
         const isStructure = categoryId === STRUCTURE_CATEGORY_ID;
         const isDeployable = categoryId === DEPLOYABLE_CATEGORY_ID;
@@ -1625,7 +1611,7 @@ Random Space Pirate"></textarea>
         for (const [, key] of SPACE_ORDER) {
           if (spaceFlags[key]) {
             counts[key].kills += 1;
-            if (pod) counts[key].pods += 1;
+            if (isGanked) counts[key].ganks += 1;
             if (isStructure) counts[key].structures += 1;
             if (isDeployable) counts[key].deployables += 1;
 
@@ -1726,7 +1712,7 @@ Random Space Pirate"></textarea>
     }
 
     function getCountsForMonths(entry, monthsBack, spaceFilter, options = {}) {
-      const totals = { kills: 0, pods: 0, structures: 0, deployables: 0, excludedKills: 0, lastKillAt: null };
+      const totals = { kills: 0, ganks: 0, structures: 0, deployables: 0, excludedKills: 0, lastKillAt: null };
       const neededMonths = getNeededMonths(monthsBack);
       const includeStructures = options.includeStructures !== false;
       const includeDeployables = options.includeDeployables !== false;
@@ -1734,14 +1720,14 @@ Random Space Pirate"></textarea>
       for (const monthInfo of neededMonths) {
         const monthCounts = entry.months[monthInfo.monthKey];
         if (!monthCounts) continue;
-        const bucket = monthCounts[spaceFilter] || { kills: 0, pods: 0, structures: 0, deployables: 0 };
+        const bucket = monthCounts[spaceFilter] || { kills: 0, ganks: 0, structures: 0, deployables: 0 };
         const structures = Number(bucket.structures || 0);
         const deployables = Number(bucket.deployables || 0);
         const excludedStructures = includeStructures ? 0 : structures;
         const excludedDeployables = includeDeployables ? 0 : deployables;
 
         totals.kills += Math.max(0, Number(bucket.kills || 0) - excludedStructures - excludedDeployables);
-        totals.pods += Number(bucket.pods || 0);
+        totals.ganks += Number(bucket.ganks || 0);
         totals.structures += structures;
         totals.deployables += deployables;
         totals.excludedKills += excludedStructures + excludedDeployables;
@@ -1759,20 +1745,20 @@ Random Space Pirate"></textarea>
       const counts = getCountsForMonths(entry, monthsBack, spaceFilter, options);
       const includeStructures = options.includeStructures !== false;
       const includeDeployables = options.includeDeployables !== false;
-      const activity = getActivityBadge(counts.lastKillAt, counts.kills > 0 || counts.pods > 0);
+      const activity = getActivityBadge(counts.lastKillAt, counts.kills > 0 || counts.ganks > 0);
       const recencyWeight = getRecencyWeight(counts.lastKillAt);
-      const weightedThreatScore = (counts.kills + (counts.pods * 2)) + recencyWeight;
+      const weightedThreatScore = (counts.kills + (counts.ganks * 2)) + recencyWeight;
       let threat = 'low';
       let notes = `No recent kill activity in selected month range (${spaceFilter}).`;
 
-      if (counts.kills >= thresholds.highThreatKills || counts.pods >= thresholds.highThreatPods) {
+      if (counts.kills >= thresholds.highThreatKills || counts.ganks >= thresholds.highThreatGanks) {
         threat = 'high';
-        notes = counts.pods >= thresholds.highThreatPods
-          ? `Recent podding activity stands out in ${spaceFilter}.`
+        notes = counts.ganks >= thresholds.highThreatGanks
+          ? `Recent gank activity stands out in ${spaceFilter}.`
           : `High recent PvP kill count in ${spaceFilter}.`;
       } else if (weightedThreatScore > 0) {
         threat = 'warning';
-        notes = counts.pods > 0
+        notes = counts.ganks > 0
           ? `Recent activity detected in ${spaceFilter}, but below the high-threat threshold.`
           : `Recent kills detected in ${spaceFilter}, but below the high-threat threshold.`;
       }
@@ -1809,7 +1795,7 @@ Random Space Pirate"></textarea>
         found: Boolean(entry.characterId),
         characterId: entry.characterId,
         kills: counts.kills,
-        podKills: counts.pods,
+        gankCount: counts.ganks,
         zkillUrl: entry.zkillUrl || '#',
         threat,
         notes: entry.characterId ? notes : 'Character name could not be resolved in ESI.',
@@ -1894,7 +1880,7 @@ Random Space Pirate"></textarea>
         if (rightThreat !== leftThreat) return rightThreat - leftThreat;
 
         if ((b.kills || 0) !== (a.kills || 0)) return (b.kills || 0) - (a.kills || 0);
-        if ((b.podKills || 0) !== (a.podKills || 0)) return (b.podKills || 0) - (a.podKills || 0);
+        if ((b.gankCount || 0) !== (a.gankCount || 0)) return (b.gankCount || 0) - (a.gankCount || 0);
 
         return (a.inputOrder || 0) - (b.inputOrder || 0);
       });
@@ -1929,7 +1915,7 @@ Random Space Pirate"></textarea>
         const pilotName = row.name || (row.characterId ? String(row.characterId) : 'Unknown pilot');
         const nameHref = row.zkillUrl || '#';
         const killsMarkup = row.isLoading ? '<span class="metric muted">…</span>' : `<span class="metric">${Number(row.kills || 0)}</span>`;
-        const podsMarkup = row.isLoading ? '<span class="metric muted">…</span>' : `<span class="metric">${Number(row.podKills || 0)}</span>`;
+        const ganksMarkup = row.isLoading ? '<span class="metric muted">…</span>' : `<span class="metric">${Number(row.gankCount || 0)}</span>`;
         const threatMarkup = row.isLoading
           ? '<span class="pill warning">SCANNING</span>'
           : `${threatPill(row.threat)}`;
@@ -1949,7 +1935,7 @@ Random Space Pirate"></textarea>
               </div>
             </td>
             <td>${killsMarkup}</td>
-            <td>${podsMarkup}</td>
+            <td>${ganksMarkup}</td>
             <td><div class="threat-cell">${threatMarkup}</div></td>
           </tr>
           <tr class="intel-row ${row.isLoading ? 'row-loading' : ''}">
@@ -1964,7 +1950,7 @@ Random Space Pirate"></textarea>
       sumPilots.textContent = String(sorted.length);
       sumThreats.textContent = String(finishedRows.filter(r => r.threat !== 'low').length);
       sumKills.textContent = String(finishedRows.reduce((acc, row) => acc + Number(row.kills || 0), 0));
-      sumPods.textContent = String(finishedRows.reduce((acc, row) => acc + Number(row.podKills || 0), 0));
+      sumGanks.textContent = String(finishedRows.reduce((acc, row) => acc + Number(row.gankCount || 0), 0));
       renderIntelSummary(finishedRows);
     }
 
@@ -2004,19 +1990,19 @@ Random Space Pirate"></textarea>
     function encodeMonthBucketCompact(monthKey, data) {
       const parts = [getShortMonthKey(monthKey)];
       const allKills = Number(data?.all?.kills || 0);
-      const allPods = Number(data?.all?.pods || 0);
+      const allGanks = Number(data?.all?.ganks || data?.all?.pods || 0);
       const allStructures = Number(data?.all?.structures || 0);
       const allDeployables = Number(data?.all?.deployables || 0);
       const allLastKillAt = data?.all?.lastKillAt ? new Date(data.all.lastKillAt).getTime() : 0;
-      if (allKills || allPods || allStructures || allDeployables || allLastKillAt) parts.push(`a${allKills}-${allPods}-${allStructures}-${allDeployables}-${allLastKillAt}`);
+      if (allKills || allGanks || allStructures || allDeployables || allLastKillAt) parts.push(`a${allKills}-${allGanks}-${allStructures}-${allDeployables}-${allLastKillAt}`);
 
       for (const [shortKey, longKey] of SPACE_ORDER.slice(1)) {
         const kills = Number(data?.[longKey]?.kills || 0);
-        const pods = Number(data?.[longKey]?.pods || 0);
+        const ganks = Number(data?.[longKey]?.ganks || data?.[longKey]?.pods || 0);
         const structures = Number(data?.[longKey]?.structures || 0);
         const deployables = Number(data?.[longKey]?.deployables || 0);
         const lastKillAt = data?.[longKey]?.lastKillAt ? new Date(data[longKey].lastKillAt).getTime() : 0;
-        if (kills || pods || structures || deployables || lastKillAt) parts.push(`${shortKey}${kills}-${pods}-${structures}-${deployables}-${lastKillAt}`);
+        if (kills || ganks || structures || deployables || lastKillAt) parts.push(`${shortKey}${kills}-${ganks}-${structures}-${deployables}-${lastKillAt}`);
       }
 
       return parts.join('_');
@@ -2047,19 +2033,19 @@ Random Space Pirate"></textarea>
         for (const seg of segments) {
           const tag = seg.slice(0, 1);
           const rest = seg.slice(1);
-          const [killsRaw, podsRaw, structuresRaw, deployablesRaw, lastKillAtRaw] = rest.split('-');
+          const [killsRaw, ganksRaw, structuresRaw, deployablesRaw, lastKillAtRaw] = rest.split('-');
           const kills = Number(killsRaw || 0);
-          const pods = Number(podsRaw || 0);
+          const ganks = Number(ganksRaw || 0);
           const structures = Number(structuresRaw || 0);
           const deployables = Number(deployablesRaw || 0);
           const lastKillAtMs = Number(lastKillAtRaw || 0);
           const lastKillAt = Number.isFinite(lastKillAtMs) && lastKillAtMs > 0 ? new Date(lastKillAtMs).toISOString() : null;
 
-          if (tag === 'a') bucket.all = { kills, pods, structures, deployables, lastKillAt };
-          if (tag === 'h') bucket.highsec = { kills, pods, structures, deployables, lastKillAt };
-          if (tag === 'l') bucket.lowsec = { kills, pods, structures, deployables, lastKillAt };
-          if (tag === 'n') bucket.nullsec = { kills, pods, structures, deployables, lastKillAt };
-          if (tag === 'w') bucket.wormhole = { kills, pods, structures, deployables, lastKillAt };
+          if (tag === 'a') bucket.all = { kills, ganks, structures, deployables, lastKillAt };
+          if (tag === 'h') bucket.highsec = { kills, ganks, structures, deployables, lastKillAt };
+          if (tag === 'l') bucket.lowsec = { kills, ganks, structures, deployables, lastKillAt };
+          if (tag === 'n') bucket.nullsec = { kills, ganks, structures, deployables, lastKillAt };
+          if (tag === 'w') bucket.wormhole = { kills, ganks, structures, deployables, lastKillAt };
         }
 
         months[monthKey] = bucket;
@@ -2121,7 +2107,7 @@ Random Space Pirate"></textarea>
         `m=${monthsBackEl.value}`,
         `s=${spaceFilterEl.value}`,
         `k=${highThreatKillsEl.value}`,
-        `p=${highThreatPodsEl.value}`,
+        `p=${highThreatGanksEl.value}`,
         `st=${includeStructuresEl.checked ? '1' : '0'}`,
         `dp=${includeDeployablesEl.checked ? '1' : '0'}`
       ].join('&');
@@ -2138,7 +2124,7 @@ Random Space Pirate"></textarea>
       const monthsBack = params.get('m');
       const spaceFilter = params.get('s');
       const highKills = params.get('k');
-      const highPods = params.get('p');
+      const highGanks = params.get('p');
       const includeStructures = params.get('st');
       const includeDeployables = params.get('dp');
       const data = params.get('d');
@@ -2146,7 +2132,7 @@ Random Space Pirate"></textarea>
       if (monthsBack) monthsBackEl.value = monthsBack;
       if (spaceFilter) spaceFilterEl.value = spaceFilter;
       if (highKills) highThreatKillsEl.value = highKills;
-      if (highPods) highThreatPodsEl.value = highPods;
+      if (highGanks) highThreatGanksEl.value = highGanks;
       if (includeStructures !== null && includeStructuresEl) includeStructuresEl.checked = includeStructures !== '0';
       if (includeDeployables !== null && includeDeployablesEl) includeDeployablesEl.checked = includeDeployables !== '0';
 
@@ -2304,7 +2290,7 @@ Random Space Pirate"></textarea>
         sumPilots.textContent = '0';
         sumThreats.textContent = '0';
         sumKills.textContent = '0';
-        sumPods.textContent = '0';
+        sumGanks.textContent = '0';
         if (showProgress) setStatus('Paste at least one pilot name first.');
         return;
       }
@@ -2312,7 +2298,7 @@ Random Space Pirate"></textarea>
       const monthsBack = Number(monthsBackEl.value);
       const thresholds = {
         highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
-        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
+        highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
       };
       const spaceFilter = spaceFilterEl.value;
       const filterOptions = {
@@ -2331,7 +2317,7 @@ Random Space Pirate"></textarea>
         zkillUrl: pilot.characterId ? `https://zkillboard.com/character/${pilot.characterId}/` : '#',
         threat: 'warning',
         kills: 0,
-        podKills: 0,
+        gankCount: 0,
         notes: pilot.characterId ? 'Waiting for zKill data...' : 'Character name could not be resolved in ESI.',
         isLoading: Boolean(pilot.characterId),
         loadingStage: pilot.characterId ? 'queued' : 'done',
@@ -2435,14 +2421,14 @@ Random Space Pirate"></textarea>
         sumPilots.textContent = '0';
         sumThreats.textContent = '0';
         sumKills.textContent = '0';
-        sumPods.textContent = '0';
+        sumGanks.textContent = '0';
         return;
       }
 
       const monthsBack = Number(monthsBackEl.value);
       const thresholds = {
         highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
-        highThreatPods: Math.max(0, Number(highThreatPodsEl.value) || 4)
+        highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
       };
       const spaceFilter = spaceFilterEl.value;
       const filterOptions = {
@@ -2486,7 +2472,7 @@ Random Space Pirate"></textarea>
       setShareStatus('');
     });
 
-    highThreatPodsEl.addEventListener('input', () => {
+    highThreatGanksEl.addEventListener('input', () => {
       saveUiStateToLocalStorage();
       rerenderFromCacheOnly();
       setShareStatus('');
@@ -2524,7 +2510,7 @@ Random Space Pirate"></textarea>
       sumPilots.textContent = '0';
       sumThreats.textContent = '0';
       sumKills.textContent = '0';
-      sumPods.textContent = '0';
+      sumGanks.textContent = '0';
     });
 
     window.addEventListener('hashchange', () => {
