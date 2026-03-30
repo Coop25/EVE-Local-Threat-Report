@@ -117,7 +117,7 @@ function renderResults(rows) {
       if (row.loadingStage === 'queued') intelBits.push('<span class="mini-pill loading">Queued for zKill</span>');
       if (row.loadingStage === 'zkill') intelBits.push('<span class="mini-pill loading">Pulling zKill…</span>');
     } else {
-      intelBits.push(`<span class="mini-pill ${escapeHtml(row.activityTone || 'neutral')}">${escapeHtml(row.activityLabel || 'No kills in window')}</span>`);
+      // intelBits.push(`<span class="mini-pill ${escapeHtml(row.activityTone || 'neutral')}">${escapeHtml(row.activityLabel || 'No kills in window')}</span>`);
       if (row.profilePending) intelBits.push('<span class="mini-pill pending">Fetching corp/alliance…</span>');
     }
 
