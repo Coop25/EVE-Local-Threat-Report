@@ -1,184 +1,286 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" sizes="32x32" href="src/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="64x64" href="src/assets/favicon-64.png">
   <title>EVE Local Threat Report</title>
-  <link rel="stylesheet" href="src/css/styles.css">
+  <meta
+    name="description"
+    content="Tactical local intel for EVE Online. Paste local chat names, scan zKillboard activity, and surface dangerous contacts fast."
+  />
+  <link rel="icon" type="image/png" sizes="32x32" href="src/assets/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="64x64" href="src/assets/favicon-64.png" />
+  <link rel="stylesheet" href="src/css/styles.css" />
 </head>
-
 <body>
-  <div class="wrap">
-    <div class="hero">
-      <div class="logo">
-        <img src="src/assets/logo.png" alt="Threat Radar Logo">
-        <div class="logo-text">
+  <div class="tactical-frame">
+    <header class="top-hud panel-cutout">
+      <div class="top-hud__left">
+        <div class="crest-box" aria-hidden="true">
+          <img src="src/assets/logo.png" alt="" />
+        </div>
+        <div class="title-stack">
+          <p class="overline">Capsuleer Intel Interface</p>
           <h1>EVE Local Threat Report</h1>
-          <span>Real-time local intel & threat analysis</span>
+          <p class="lede">Turn local chat into fast, readable hostile intel without losing the scan workflow you already trust.</p>
         </div>
       </div>
-      <div class="sub">
-        Paste one pilot name per line, then pull recent zKillboard activity and flag characters who look dangerous. This
-        tool checks ship kills and gank labels for the selected month range, can filter by space type using zKill
-        location
-        labels, and caches recent pilot lookups to reduce duplicate requests and help avoid rate limits.
+
+      <div class="top-hud__right">
+        <div class="hud-readouts">
+          <div class="hud-chip"><span class="hud-chip__label">zKill Pace</span><strong id="reqPerMin">50 / min</strong></div>
+          <div class="hud-chip"><span class="hud-chip__label">Profile Cache</span><strong>Active</strong></div>
+        </div>
+        <a class="support-link support-link--header" href="https://ko-fi.com/coopercooper50" target="_blank" rel="noopener noreferrer">Support this intel tool on Ko-fi</a>
       </div>
-    </div>
+    </header>
 
-    <div class="grid">
-      <div class="card">
-        <label for="names">Pilot names (one per line)</label>
-        <textarea id="names" placeholder="Insert pilot names here...
+    <main class="combat-layout">
+      <aside class="control-column panel-cutout">
+        <div class="section-head">
+          <p class="overline">Input Uplink</p>
+          <h2>Local Feed</h2>
+        </div>
 
-Example:
-Chribba
-The Mittani
-Random Space Pirate"></textarea>
+        <label class="field-block" for="names">
+          <span class="field-block__label">Local roster</span>
+          <span class="field-block__help">Paste one pilot per line. Duplicates are ignored automatically.</span>
+          <textarea
+            id="names"
+            class="intel-textarea"
+            placeholder="Paste local chat roster here..."
+            spellcheck="false"
+            autocomplete="off"
+          ></textarea>
+        </label>
 
-        <div class="row">
-          <div>
-            <label for="monthsBack">Activity window</label>
-            <select id="monthsBack">
-              <option value="1">1 month ago</option>
-              <option value="2">2 months ago</option>
-              <option value="3" selected>3 months ago</option>
+        <div class="action-cluster action-cluster--sidebar">
+          <button id="analyzeBtn" class="btn btn-primary" type="button">Scan Local</button>
+          <button id="shareBtn" class="btn btn-secondary" type="button">Copy Intel Link</button>
+          <button id="clearBtn" class="btn btn-ghost" type="button">Clear</button>
+        </div>
+        <div class="section-divider"></div>
+
+        <div class="section-head compact-head">
+          <p class="overline">Scan Profile</p>
+          <h3>Rules of Analysis</h3>
+        </div>
+
+        <div class="control-grid">
+          <label class="field-block" for="monthsBack">
+            <span class="field-block__label">Activity window</span>
+            <select id="monthsBack" class="intel-select">
+              <option value="1">Current + 1 month</option>
+              <option value="2">Current + 2 months</option>
+              <option value="3" selected>Current + 3 months</option>
             </select>
-          </div>
-          <div>
-            <label for="spaceFilter">Flag kills in</label>
-            <select id="spaceFilter">
-              <option value="all" selected>All space</option>
+          </label>
+
+          <label class="field-block" for="spaceFilter">
+            <span class="field-block__label">Space filter</span>
+            <select id="spaceFilter" class="intel-select">
+              <option value="all">All space</option>
               <option value="highsec">Highsec</option>
               <option value="lowsec">Lowsec</option>
               <option value="nullsec">Nullsec</option>
               <option value="wormhole">Wormhole</option>
             </select>
+          </label>
+        </div>
+
+        <div class="threshold-grid">
+          <label class="field-block" for="highThreatKills">
+            <span class="field-block__label">High threat if kills ≥</span>
+            <input id="highThreatKills" class="intel-input" type="number" min="1" step="1" value="25" />
+          </label>
+
+          <label class="field-block" for="highThreatGanks">
+            <span class="field-block__label">High threat if ganks ≥</span>
+            <input id="highThreatGanks" class="intel-input" type="number" min="0" step="1" value="4" />
+          </label>
+        </div>
+
+        <div class="toggle-panel">
+          <p class="field-block__label">Kill classes included</p>
+          <label class="toggle-row" for="includeStructures">
+            <input id="includeStructures" type="checkbox" checked />
+            <span>Structure kills</span>
+          </label>
+          <label class="toggle-row" for="includeDeployables">
+            <input id="includeDeployables" type="checkbox" checked />
+            <span>Deployable kills</span>
+          </label>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="section-head compact-head">
+          <p class="overline">Telemetry</p>
+          <h3>Link Status</h3>
+        </div>
+
+        <div class="status-stack">
+          <div class="status-readout">
+            <span class="status-readout__label">Scan status</span>
+            <p id="status" class="status-readout__value">Ready.</p>
+          </div>
+          <div class="status-readout">
+            <span class="status-readout__label">Share status</span>
+            <p id="shareStatus" class="status-readout__value">No intel link copied yet.</p>
           </div>
         </div>
 
-        <div class="row">
-          <div>
-            <label for="highThreatKills">High threat kills ≥</label>
-            <input id="highThreatKills" type="number" min="1" value="3" />
-          </div>
-          <div>
-            <label for="highThreatGanks">High threat ganks ≥</label>
-            <input id="highThreatGanks" type="number" min="0" value="1" />
-          </div>
-        </div>
+        <p class="control-footnote">Threat is a fast heuristic for triage. It should sharpen your judgment, not replace it.</p>
+      </aside>
 
-        <div class="row">
-          <div>
-            <label><input id="includeStructures" type="checkbox" checked /> Include structure kills</label>
-          </div>
-          <div>
-            <label><input id="includeDeployables" type="checkbox" checked /> Include deployable kills</label>
-          </div>
-        </div>
+      <section class="intel-column">
+        <section class="overview-grid">
+          <div class="threat-core panel-cutout">
+            <div class="section-head compact-head">
+              <div>
+                <p class="overline">System Analysis</p>
+                <h2>Threat Envelope</h2>
+              </div>
+              <div class="threat-core__summary">
+                <span class="threat-core__caption">Current system threat</span>
+                <div class="threat-core__numbers">
+                  <span id="systemThreatPercent" class="threat-core__percent">0%</span>
+                  <span id="systemThreatText" class="threat-core__text">No data yet</span>
+                </div>
+              </div>
+            </div>
+            
+<div class="threat-explainer">
+  Threat score is based on recent kill activity, gank weighting, and presence of coordinated corp/alliance groups.
+</div>
 
-        <div class="buttons">
-          <button id="analyzeBtn" class="primary">Analyze pilots</button>
-          <button id="shareBtn" class="secondary">Share this scan</button>
-          <!-- <button id="sampleBtn" class="secondary">Load sample names</button> -->
-          <button id="clearBtn" class="secondary">Clear</button>
-        </div>
 
-        <div id="status" class="status"></div>
-        <div id="shareStatus" class="meta"></div>
-        <div class="meta">
-          Tip: this version keeps a shared request queue at about <span id="reqPerMin"></span> requests per minute on
-          separate queues,
-          caches the last 50 pilot
-          lookups for 1 hour, filters kills by the selected space type using zKill location labels, and can include or
-          exclude deployable and structure kills in both the live view and shared links.
-        </div>
-      </div>
+            <div id="systemThreatGauge" class="eve-gauge hidden" aria-hidden="true">
+              <div class="eve-gauge__track">
+                <div class="eve-gauge__segments" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div id="systemThreatArrow" class="eve-gauge__needle" aria-hidden="true"></div>
+              </div>
+              <div class="eve-gauge__labels">
+                <span>Low</span>
+                <span>Watch</span>
+                <span>High</span>
+              </div>
+            </div>
+          </div>
 
-      <div class="card">
-        <div class="summary" id="summary">
-          <div class="stat">
-            <div class="k">Pilots analyzed</div>
-            <div class="v" id="sumPilots">0</div>
+          <div class="stat-grid">
+            <article class="stat-tile panel-cutout panel-cutout--small">
+              <span class="stat-tile__label">Local count</span>
+              <strong id="sumPilots" class="stat-tile__value">0</strong>
+            </article>
+            <article class="stat-tile panel-cutout panel-cutout--small">
+              <span class="stat-tile__label">Threat contacts</span>
+              <strong id="sumThreats" class="stat-tile__value">0</strong>
+            </article>
+            <article class="stat-tile panel-cutout panel-cutout--small">
+              <span class="stat-tile__label">Filtered kills</span>
+              <strong id="sumKills" class="stat-tile__value">0</strong>
+            </article>
+            <article class="stat-tile panel-cutout panel-cutout--small">
+              <span class="stat-tile__label">Ganks</span>
+              <strong id="sumGanks" class="stat-tile__value">0</strong>
+            </article>
           </div>
-          <div class="stat">
-            <div class="k">Threats flagged</div>
-            <div class="v" id="sumThreats">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Filtered kills</div>
-            <div class="v" id="sumKills">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Ganks</div>
-            <div class="v" id="sumGanks">0</div>
-          </div>
-        </div>
+        </section>
 
-        <div id="systemThreatGauge" class="system-threat-gauge hidden">
-          <div class="system-threat-header">
+        <section id="intelSummary" class="intel-band panel-cutout hidden" aria-live="polite">
+          <!-- populated by render.js -->
+        </section>
+
+        <section class="contacts-shell panel-cutout">
+          <div class="section-head compact-head contacts-shell__head">
             <div>
-              <div class="system-threat-label">System threat</div>
-              <div id="systemThreatPercent" class="system-threat-percent">0%</div>
+              <p class="overline">Contact List</p>
+              <h2>Threat Contacts</h2>
             </div>
-            <div id="systemThreatText" class="system-threat-text">No data yet</div>
+            <p class="contacts-shell__note">Dangerous and active pilots rise first. Use corp and alliance groupings to spot gangs fast.</p>
           </div>
 
-          <div class="system-threat-meter-wrap">
-            <div class="system-threat-meter">
-              <div id="systemThreatArrow" class="system-threat-arrow">▼</div>
-            </div>
-            <div class="system-threat-scale">
-              <span>Safe</span>
-              <span>Caution</span>
-              <span>Danger</span>
-            </div>
+          <div class="results-shell">
+            <table class="results-table">
+              <thead>
+                <tr>
+                  <th scope="col">Pilot</th>
+                  <th scope="col">Kills</th>
+                  <th scope="col">Ganks</th>
+                  <th scope="col">Threat</th>
+                                  </tr>
+              </thead>
+              <tbody id="resultsBody">
+                <tr>
+                  <td colspan="4" class="empty-state-cell">
+                    <div class="empty-state">
+                      <span class="empty-state__kicker">Awaiting Scan</span>
+                      <p>Paste local, run scan, and the contact list will populate here.</p>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <div id="intelSummary" class="intel-summary hidden"></div>
-
-        <div class="table-shell" style="overflow:auto; max-height: 70vh;">
-          <table>
-            <thead>
-              <tr>
-                <th>Pilot</th>
-                <th>Kills</th>
-                <th>Ganks</th>
-                <th>Threat</th>
-              </tr>
-            </thead>
-            <tbody id="resultsBody">
-              <tr>
-                <td colspan="4" class="note">Results will appear here.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="note">
-          Threat is a simple heuristic, not a magic answer. A pilot is marked <strong>high</strong> if their recent
-          activity or gank count crosses your thresholds, <strong>warning</strong> if they have any recent activity
-          but stay below those thresholds, and <strong>low</strong> if they show no recent kill activity in the chosen
-          window.
-        </div>
-      </div>
-    </div>
+        </section>
+      </section>
+    </main>
   </div>
 
-  <div id="globalRowHoverCard" class="global-row-hover-card" aria-hidden="true"></div>
+  <div id="globalRowHoverCard" class="hover-card" aria-hidden="true"></div>
+
+
+  <script>
+    (function () {
+      function syncContactsHeight() {
+        if (window.innerWidth <= 1120) {
+          document.documentElement.style.removeProperty('--contacts-shell-max-height');
+          return;
+        }
+
+        const control = document.querySelector('.control-column');
+        const contacts = document.querySelector('.contacts-shell');
+
+        if (!control || !contacts) return;
+
+        const controlRect = control.getBoundingClientRect();
+        const contactsRect = contacts.getBoundingClientRect();
+
+        const available = Math.floor(controlRect.bottom - contactsRect.top);
+        if (available > 160) {
+          document.documentElement.style.setProperty('--contacts-shell-max-height', available + 'px');
+        }
+      }
+
+      let raf = null;
+      function requestSync() {
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(syncContactsHeight);
+      }
+
+      window.addEventListener('load', requestSync);
+      window.addEventListener('resize', requestSync);
+
+      const observer = new MutationObserver(requestSync);
+      window.addEventListener('DOMContentLoaded', function () {
+        const resultsBody = document.getElementById('resultsBody');
+        const intelSummary = document.getElementById('intelSummary');
+        if (resultsBody) observer.observe(resultsBody, { childList: true, subtree: true });
+        if (intelSummary) observer.observe(intelSummary, { childList: true, subtree: true, attributes: true });
+        requestSync();
+        setTimeout(requestSync, 50);
+        setTimeout(requestSync, 250);
+        setTimeout(requestSync, 750);
+      });
+    })();
+  </script>
 
   <script src="src/js/core.js"></script>
   <script src="src/js/render.js"></script>
   <script src="src/js/share.js"></script>
   <script src="src/js/app.js"></script>
-
-  <a href="https://ko-fi.com/coopercooper50" target="_blank" class="kofi-tip">
-    ☕ If this saved your ship, consider a tip
-  </a>
-
 </body>
-
 </html>
