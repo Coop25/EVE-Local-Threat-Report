@@ -945,43 +945,149 @@ button { cursor: pointer; }
   padding-top: 8px;
 }
 
-.threat-readout {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
+
+/* v11h: real visible dropdown caret on the right side */
+.select-shell {
+  position: relative;
 }
 
-.threat-percent {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0 0 10px;
-  border-left: 1px solid rgba(255,255,255,.08);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: .08em;
-  line-height: 1;
-  opacity: .92;
+.select-shell::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  right: 42px;
+  width: 1px;
+  background: rgba(151, 202, 252, .14);
+  pointer-events: none;
+  z-index: 2;
 }
 
-.threat-percent::before {
-  content: "SIG";
-  margin-right: 6px;
-  color: var(--dim);
-  font-size: 10px;
-  letter-spacing: .14em;
+.select-shell::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 17px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(216, 169, 88, .95);
+  border-bottom: 2px solid rgba(216, 169, 88, .95);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+  z-index: 2;
+  opacity: .95;
 }
 
-.results-table td:nth-child(4) {
-  white-space: nowrap;
+.select-shell:hover::after {
+  border-color: rgba(151, 202, 252, .95);
 }
 
-.threat-percent::before {
-  content: "SIG";
+.intel-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  width: 100%;
+  padding-right: 56px;
+  background-image: linear-gradient(180deg, rgba(9,14,20,.98), rgba(13,20,28,.98));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: 0 0;
 }
 
-.threat-percent::after {
-  margin-left: 1px;
-  color: var(--dim);
+.intel-select::-ms-expand {
+  display: none;
+}
+
+.intel-select:hover {
+  border-color: rgba(151, 202, 252, .34);
+  box-shadow: 0 0 0 1px rgba(151, 202, 252, .06);
+}
+
+.intel-select:focus-visible {
+  outline: none;
+  border-color: rgba(151, 202, 252, .55);
+  box-shadow:
+    0 0 0 1px rgba(151, 202, 252, .18),
+    0 0 0 4px rgba(151, 202, 252, .08);
+}
+
+.select-shell:hover .intel-select,
+.select-shell:focus-within .intel-select {
+  border-color: rgba(151, 202, 252, .34);
+}
+
+/* stronger hover/focus/press feedback for action buttons */
+.btn {
+  position: relative;
+  transition:
+    transform .08s ease,
+    filter .14s ease,
+    box-shadow .14s ease,
+    border-color .14s ease,
+    background .14s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.05);
+}
+
+.btn:focus-visible {
+  outline: none;
+  border-color: rgba(151, 202, 252, .55);
+  box-shadow:
+    0 0 0 1px rgba(151, 202, 252, .18),
+    0 0 0 4px rgba(151, 202, 252, .08);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(.985);
+  filter: brightness(.94);
+}
+
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  transition: opacity .14s ease;
+}
+
+.btn:hover::after {
+  opacity: 1;
+}
+
+/* make each button feel a bit more intentional */
+.btn-primary:active {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+}
+
+.btn-secondary:active {
+  box-shadow: inset 0 0 0 1px rgba(151, 202, 252, .18);
+}
+
+.btn-ghost:active {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+
+.btn.is-confirmed {
+  border-color: rgba(118, 186, 141, .42);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.05),
+    0 0 0 1px rgba(118, 186, 141, .18),
+    0 0 18px rgba(118, 186, 141, .14);
+}
+
+.btn.is-confirmed::before {
+  content: "✓";
+  margin-right: 8px;
+  color: #a6e4bb;
+}
+
+.btn.is-busy {
+  pointer-events: none;
+  opacity: .86;
 }

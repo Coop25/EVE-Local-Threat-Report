@@ -218,10 +218,25 @@ includeDeployablesEl.addEventListener('change', () => {
   setShareStatus('');
 });
 
-analyzeBtn.addEventListener('click', analyze);
-if (shareBtn) shareBtn.addEventListener('click', copyShareLink);
+function flashButtonState(button, className = "is-confirmed", ms = 900) {
+  if (!button) return;
+  button.classList.add(className);
+  window.setTimeout(() => {
+    button.classList.remove(className);
+  }, ms);
+}
+
+analyzeBtn.addEventListener('click', ()=>{
+  analyze();
+  flashButtonState(analyzeBtn);
+});
+if (shareBtn) shareBtn.addEventListener('click', ()=>{
+  copyShareLink();
+  flashButtonState(shareBtn);
+});
 
 clearBtn.addEventListener('click', () => {
+  flashButtonState(clearBtn);
   namesEl.value = '';
   location.hash = '';
   setStatus('');
