@@ -944,3 +944,44 @@ button { cursor: pointer; }
   border-top: 1px solid rgba(255,255,255,0.05);
   padding-top: 8px;
 }
+
+.threat-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.threat-percent {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0 0 10px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .08em;
+  line-height: 1;
+  opacity: .92;
+}
+
+.threat-percent::before {
+  content: "SIG";
+  margin-right: 6px;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+
+.results-table td:nth-child(4) {
+  white-space: nowrap;
+}
+
+.threat-percent::before {
+  content: "SIG";
+}
+
+.threat-percent::after {
+  margin-left: 1px;
+  color: var(--dim);
+}

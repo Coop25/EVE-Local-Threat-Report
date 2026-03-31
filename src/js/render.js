@@ -1,9 +1,18 @@
 /* Rendering helpers for the results table, intel summary, and hover card. */
 
 // Render the small threat badge used in the table.
-function threatPill(threat, percent = 0) {
-  const cls = threat === 'high' ? 'high' : threat === 'warning' ? 'warning' : 'low';
-  return `<span class="pill ${cls}">${threat.toUpperCase()}</span>`;
+function threatPill(threat) {
+  const cls =
+    threat === 'high' ? 'high' :
+    threat === 'warning' ? 'warning' :
+    'low';
+
+  const label =
+    threat === 'high' ? 'HIGH' :
+    threat === 'warning' ? 'WARNING' :
+    'LOW';
+
+  return `<span class="threat-pill ${cls}">${label}</span>`;
 }
 
 function threatInfoButton(explanation) {
@@ -147,11 +156,12 @@ function renderResults(rows) {
     const ganksMarkup = row.isLoading ? '<span class="metric muted">…</span>' : `<span class="metric">${Number(row.gankCount || 0)}</span>`;
 
     const threatMarkup = row.isLoading
-      ? '<div class="threat-cell"><span class="pill warning">SCANNING</span></div>'
-      : `<div class="threat-cell">
-           ${threatPill(row.threat)}
-           <span class="mini-pill neutral">${Number(row.threatPercent || 0)}%</span>
-         </div>`;
+      ? `<div class="threat-readout threat-readout--loading">
+      <span class="threat-pill threat-pill--loading">SCANNING</span>
+    </div>` : `<div class="threat-readout">
+      ${threatPill(row.threat)}
+      <span class="threat-percent">${Number(row.threatPercent || 0)}%</span>
+    </div>`;
 
     const hoverThreat = row.isLoading
       ? 'Waiting for zKill data to explain this row.'

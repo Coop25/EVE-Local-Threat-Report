@@ -293,7 +293,7 @@ function buildThreatExplanation(entry, counts, thresholds, spaceFilter, options,
   const lines = [
     `${counts.kills} filtered kill${counts.kills === 1 ? '' : 's'} in ${spaceFilter}.`,
     `${counts.ganks} gank${counts.ganks === 1 ? '' : 's'}.`,
-    `${activityLabel}.`
+    `${activityLabel}`
   ];
 
   if (counts.lastKillAt) lines.push(`Most recent kill: ${formatUtcDateTime(counts.lastKillAt)}.`);
@@ -787,7 +787,7 @@ function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, opt
     thresholds,
     spaceFilter,
     options,
-    `${activity.label} Threat score: ${threatPercent}/100.`,
+    `Threat score: ${threatPercent}/100.`,
     entry.corpName,
     entry.allianceName,
     groupSignals
