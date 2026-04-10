@@ -1717,6 +1717,33 @@ button {
     overflow: visible;
   }
 
+  .intel-column > .overview-grid,
+  .intel-column > .intel-band,
+  .intel-column > .contacts-shell {
+    margin-top: 16px;
+  }
+
+  .intel-column > :first-child {
+    margin-top: 0;
+  }
+
+  .overview-grid {
+    margin-bottom: 0;
+  }
+
+  .stat-grid {
+    margin-top: 14px;
+  }
+
+  .intel-band {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .contacts-shell {
+    padding-top: 16px;
+  }
+
   .results-shell {
     flex: none;
   }
