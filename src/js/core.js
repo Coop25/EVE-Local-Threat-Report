@@ -48,6 +48,8 @@ var clearBtn = document.getElementById('clearBtn');
 var statusEl = document.getElementById('status');
 var shareStatusEl = document.getElementById('shareStatus');
 var resultsBody = document.getElementById('resultsBody');
+var scanStatusToastEl = document.getElementById('scanStatusToast');
+var scanStatusToastMessageEl = document.getElementById('scanStatusToastMessage');
 
 var sumPilots = document.getElementById('sumPilots');
 var sumThreats = document.getElementById('sumThreats');
@@ -65,17 +67,96 @@ var requestQueueState = {
 };
 var currentAnalysisToken = 0;
 var hoveredRowEl = null;
+var statusToastMode = 'idle';
+var statusToastHideTimer = 0;
+var SHARE_TOAST_DURATION_MS = 2200;
 
 /* Basic UI messaging and persistence helpers. */
 
 
 function setStatus(message) {
   statusEl.textContent = message;
+  syncStatusToast(message);
 }
 
 
-function setShareStatus(message) {
+function clearStatusToastHideTimer() {
+  if (!statusToastHideTimer) return;
+  window.clearTimeout(statusToastHideTimer);
+  statusToastHideTimer = 0;
+}
+
+
+function syncStatusToast(message) {
+  if (!scanStatusToastEl || !scanStatusToastMessageEl) return;
+  scanStatusToastMessageEl.textContent = message || '';
+  if (!message) {
+    scanStatusToastEl.classList.remove('status-toast--visible', 'status-toast--active');
+    scanStatusToastEl.setAttribute('aria-hidden', 'true');
+    return;
+  }
+
+  if (statusToastMode === 'idle' && !scanStatusToastEl.classList.contains('status-toast--visible')) {
+    scanStatusToastEl.setAttribute('aria-hidden', 'true');
+    return;
+  }
+
+  scanStatusToastEl.classList.add('status-toast--visible');
+  scanStatusToastEl.classList.toggle('status-toast--active', statusToastMode === 'scan');
+  scanStatusToastEl.setAttribute('aria-hidden', 'false');
+}
+
+
+function showScanStatusToast(message, active = false) {
+  clearStatusToastHideTimer();
+  statusToastMode = active ? 'scan' : 'share';
+  syncStatusToast(message || statusEl.textContent || '');
+}
+
+
+function hideScanStatusToast(delayMs = 0) {
+  if (statusToastMode === 'scan') {
+    statusToastMode = 'idle';
+  }
+  hideStatusToast(delayMs);
+}
+
+
+function showShareStatusToast(message, delayMs = SHARE_TOAST_DURATION_MS) {
+  if (statusToastMode === 'scan') return;
+  clearStatusToastHideTimer();
+  statusToastMode = 'share';
+  syncStatusToast(message || '');
+  hideStatusToast(delayMs);
+}
+
+
+function hideStatusToast(delayMs = 0) {
+  clearStatusToastHideTimer();
+  if (statusToastMode !== 'scan') {
+    statusToastMode = 'idle';
+  }
+  if (!scanStatusToastEl) return;
+
+  const hide = () => {
+    statusToastMode = 'idle';
+    scanStatusToastEl.classList.remove('status-toast--visible', 'status-toast--active');
+    scanStatusToastEl.setAttribute('aria-hidden', 'true');
+  };
+
+  if (delayMs > 0) {
+    statusToastHideTimer = window.setTimeout(hide, delayMs);
+    return;
+  }
+
+  hide();
+}
+
+
+function setShareStatus(message, options = {}) {
   if (shareStatusEl) shareStatusEl.textContent = message;
+  if (options.showToast === false || !message) return;
+  showShareStatusToast(message, options.toastDurationMs);
 }
 
 

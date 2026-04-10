@@ -292,13 +292,12 @@
 
       const shareUrl = `${location.origin}${location.pathname}#scan=${payload}`;
       try {
-        console.log(shareUrl)
-        let shortUrl = await shortenUrl(shareUrl)
+        const shortUrl = await shortenUrl(shareUrl);
         await navigator.clipboard.writeText(shortUrl);
         setShareStatus(`Share link copied. Length: ${shareUrl.length} characters.`);
       } catch (error) {
         setShareStatus(`Could not copy automatically. Use this link: ${shareUrl}`);
-        console.error(error)
+        console.error(error);
       }
     }
 

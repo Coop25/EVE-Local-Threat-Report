@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EVE Local Threat Report</title>
-  <meta
-    name="description"
-    content="Tactical local intel for EVE Online. Paste local chat names, scan zKillboard activity, and surface dangerous contacts fast."
-  />
+  <meta name="description"
+    content="Tactical local intel for EVE Online. Paste local chat names, scan zKillboard activity, and surface dangerous contacts fast." />
   <link rel="icon" type="image/png" sizes="32x32" href="src/assets/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="64x64" href="src/assets/favicon-64.png" />
   <link rel="stylesheet" href="src/css/styles.css" />
 </head>
+
 <body>
   <div class="tactical-frame">
     <header class="top-hud panel-cutout">
@@ -22,16 +22,19 @@
         <div class="title-stack">
           <p class="overline">Capsuleer Intel Interface</p>
           <h1>EVE Local Threat Report</h1>
-          <p class="lede">Turn local chat into fast, readable hostile intel without losing the scan workflow you already trust.</p>
+          <p class="lede">Turn local chat into fast, readable hostile intel without losing the scan workflow you already
+            trust.</p>
         </div>
       </div>
 
       <div class="top-hud__right">
         <div class="hud-readouts">
-          <div class="hud-chip"><span class="hud-chip__label">zKill Pace</span><strong id="reqPerMin">50 / min</strong></div>
+          <div class="hud-chip"><span class="hud-chip__label">zKill Pace</span><strong id="reqPerMin">50 / min</strong>
+          </div>
           <div class="hud-chip"><span class="hud-chip__label">Profile Cache</span><strong>Active</strong></div>
         </div>
-        <a class="support-link support-link--header" href="https://ko-fi.com/coopercooper50" target="_blank" rel="noopener noreferrer">Support this intel tool on Ko-fi</a>
+        <a class="support-link support-link--header" href="https://ko-fi.com/coopercooper50" target="_blank"
+          rel="noopener noreferrer">Support this intel tool on Ko-fi</a>
       </div>
     </header>
 
@@ -45,13 +48,8 @@
         <label class="field-block" for="names">
           <span class="field-block__label">Local roster</span>
           <span class="field-block__help">Paste one pilot per line. Duplicates are ignored automatically.</span>
-          <textarea
-            id="names"
-            class="intel-textarea"
-            placeholder="Paste local chat roster here..."
-            spellcheck="false"
-            autocomplete="off"
-          ></textarea>
+          <textarea id="names" class="intel-textarea" placeholder="Paste local chat roster here..." spellcheck="false"
+            autocomplete="off"></textarea>
         </label>
 
         <div class="action-cluster action-cluster--sidebar">
@@ -70,21 +68,21 @@
           <label class="field-block" for="monthsBack">
             <span class="field-block__label">Activity window</span>
             <div class="select-shell"><select id="monthsBack" class="intel-select">
-              <option value="1">Current + 1 month</option>
-              <option value="2">Current + 2 months</option>
-              <option value="3" selected>Current + 3 months</option>
-            </select></div>
+                <option value="1">Current + 1 month</option>
+                <option value="2">Current + 2 months</option>
+                <option value="3" selected>Current + 3 months</option>
+              </select></div>
           </label>
 
           <label class="field-block" for="spaceFilter">
             <span class="field-block__label">Space filter</span>
             <div class="select-shell"><select id="spaceFilter" class="intel-select">
-              <option value="all">All space</option>
-              <option value="highsec">Highsec</option>
-              <option value="lowsec">Lowsec</option>
-              <option value="nullsec">Nullsec</option>
-              <option value="wormhole">Wormhole</option>
-            </select></div>
+                <option value="all">All space</option>
+                <option value="highsec">Highsec</option>
+                <option value="lowsec">Lowsec</option>
+                <option value="nullsec">Nullsec</option>
+                <option value="wormhole">Wormhole</option>
+              </select></div>
           </label>
         </div>
 
@@ -130,7 +128,8 @@
           </div>
         </div>
 
-        <p class="control-footnote">Threat is a fast heuristic for triage. It should sharpen your judgment, not replace it.</p>
+        <p class="control-footnote">Threat is a fast heuristic for triage. It should sharpen your judgment, not replace
+          it.</p>
       </aside>
 
       <section class="intel-column">
@@ -149,10 +148,11 @@
                 </div>
               </div>
             </div>
-            
-<div class="threat-explainer">
-  Threat score is based on recent kill activity, gank weighting, and presence of coordinated corp/alliance groups.
-</div>
+
+            <div class="threat-explainer">
+              Threat score is based on recent kill activity, gank weighting, and presence of coordinated corp/alliance
+              groups.
+            </div>
 
 
             <div id="systemThreatGauge" class="eve-gauge hidden" aria-hidden="true">
@@ -200,7 +200,8 @@
               <p class="overline">Contact List</p>
               <h2>Threat Contacts</h2>
             </div>
-            <p class="contacts-shell__note">Dangerous and active pilots rise first. Use corp and alliance groupings to spot gangs fast.</p>
+            <p class="contacts-shell__note">Dangerous and active pilots rise first. Use corp and alliance groupings to
+              spot gangs fast.</p>
           </div>
 
           <div class="results-shell">
@@ -211,7 +212,7 @@
                   <th scope="col">Kills</th>
                   <th scope="col">Ganks</th>
                   <th scope="col">Threat</th>
-                                  </tr>
+                </tr>
               </thead>
               <tbody id="resultsBody">
                 <tr>
@@ -283,4 +284,5 @@
   <script src="src/js/share.js"></script>
   <script src="src/js/app.js"></script>
 </body>
+
 </html>
