@@ -480,6 +480,88 @@ button {
   color: var(--muted);
 }
 
+.status-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10020;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(420px, calc(100vw - 28px));
+  padding: 14px 16px;
+  border: 1px solid rgba(151, 202, 252, .18);
+  border-left: 3px solid rgba(216, 169, 88, .72);
+  background: linear-gradient(180deg, rgba(18, 27, 37, .97), rgba(8, 13, 19, .98));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+.status-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.status-toast--active {
+  border-color: rgba(216, 169, 88, .3);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, .45),
+    0 0 0 1px rgba(216, 169, 88, .12),
+    0 0 18px rgba(216, 169, 88, .1);
+}
+
+.status-toast__pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 0 0 0 0 rgba(216, 169, 88, .42);
+  flex: 0 0 auto;
+}
+
+.status-toast--active .status-toast__pulse {
+  animation: scan-toast-pulse 1.35s ease-out infinite;
+}
+
+.status-toast__body {
+  min-width: 0;
+}
+
+.status-toast__eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  font-size: 10px;
+  font-family: var(--mono);
+}
+
+.status-toast__message {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+@keyframes scan-toast-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(216, 169, 88, .42);
+  }
+  70% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 12px rgba(216, 169, 88, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(216, 169, 88, 0);
+  }
+}
+
 .control-footnote {
   margin-top: 16px;
   font-size: .92rem;
@@ -758,6 +840,12 @@ button {
   .contacts-shell,
   .intel-band {
     padding: 14px;
+  }
+
+  .status-toast {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
   }
 }
 

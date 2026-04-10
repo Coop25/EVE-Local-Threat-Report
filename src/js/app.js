@@ -118,6 +118,7 @@ async function analyze() {
   analyzeBtn.disabled = true;
   if (shareBtn) shareBtn.disabled = true;
   clearBtn.disabled = true;
+  showScanStatusToast('Starting scan...', true);
   setStatus('Starting scan...');
   setShareStatus('');
 
@@ -129,6 +130,8 @@ async function analyze() {
     console.error(error);
     setStatus(`Error: ${error.message}`);
   } finally {
+    showScanStatusToast(statusEl.textContent || 'Scan complete.', false);
+    hideScanStatusToast(2400);
     analyzeBtn.disabled = false;
     if (shareBtn) shareBtn.disabled = false;
     clearBtn.disabled = false;
@@ -240,6 +243,7 @@ clearBtn.addEventListener('click', () => {
   namesEl.value = '';
   location.hash = '';
   setStatus('');
+  hideScanStatusToast();
   setShareStatus('');
   pilotSummaryCache.clear();
   clearLocalStorageState();
