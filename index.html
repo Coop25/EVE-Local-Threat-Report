@@ -38,8 +38,18 @@
       </div>
     </header>
 
+    <div class="control-drawer-bar panel-cutout">
+      <button id="controlDrawerToggle" class="control-drawer-toggle" type="button" aria-expanded="false"
+        aria-controls="controlColumn">
+        <span class="control-drawer-toggle__eyebrow">Input Uplink</span>
+        <strong class="control-drawer-toggle__title">Local Feed & Scan Controls</strong>
+        <span class="control-drawer-toggle__hint">Tap here to open the local feed drawer</span>
+        <span id="controlDrawerMeta" class="control-drawer-toggle__meta">No pilots loaded • Tap to open</span>
+      </button>
+    </div>
+
     <main class="combat-layout">
-      <aside class="control-column panel-cutout">
+      <aside id="controlColumn" class="control-column panel-cutout" aria-label="Scan controls">
         <div class="section-head">
           <p class="overline">Input Uplink</p>
           <h2>Local Feed</h2>
@@ -229,15 +239,28 @@
         </section>
       </section>
     </main>
-  </div>
 
+    <button id="controlDrawerBackdrop" class="control-drawer-backdrop" type="button" tabindex="-1" aria-hidden="true"
+      aria-label="Close scan controls"></button>
+  </div>
   <div id="globalRowHoverCard" class="hover-card" aria-hidden="true"></div>
+  <div id="scanStatusToast" class="status-toast" aria-hidden="true" role="status" aria-live="polite">
+    <span class="status-toast__pulse" aria-hidden="true"></span>
+    <div class="status-toast__body">
+      <span class="status-toast__eyebrow">Scan Status</span>
+      <p id="scanStatusToastMessage" class="status-toast__message">Ready.</p>
+    </div>
+  </div>
 
 
   <script>
     (function () {
+      function useStackedLayout() {
+        return window.matchMedia('(max-width: 1280px), (max-aspect-ratio: 10/11) and (max-width: 1500px)').matches;
+      }
+
       function syncContactsHeight() {
-        if (window.innerWidth <= 1120) {
+        if (useStackedLayout()) {
           document.documentElement.style.removeProperty('--contacts-shell-max-height');
           return;
         }

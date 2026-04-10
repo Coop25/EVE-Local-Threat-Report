@@ -57,6 +57,10 @@ var sumKills = document.getElementById('sumKills');
 var sumGanks = document.getElementById('sumGanks');
 var intelSummaryEl = document.getElementById('intelSummary');
 var globalRowHoverCardEl = document.getElementById('globalRowHoverCard');
+var controlColumnEl = document.getElementById('controlColumn');
+var controlDrawerToggleEl = document.getElementById('controlDrawerToggle');
+var controlDrawerMetaEl = document.getElementById('controlDrawerMeta');
+var controlDrawerBackdropEl = document.getElementById('controlDrawerBackdrop');
 
 var typeCache = new Map();
 var pilotSummaryCache = new Map();
