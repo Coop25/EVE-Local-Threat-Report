@@ -135,6 +135,7 @@ async function analyze() {
     analyzeBtn.disabled = false;
     if (shareBtn) shareBtn.disabled = false;
     clearBtn.disabled = false;
+    if (isCompactControlDrawerLayout()) closeControlDrawer();
   }
 }
 
@@ -183,6 +184,7 @@ namesEl.addEventListener('input', () => {
   prunePilotCache();
   saveUiStateToLocalStorage();
   setShareStatus('');
+  updateControlDrawerSummary();
 });
 
 monthsBackEl.addEventListener('change', () => {
@@ -229,6 +231,42 @@ function flashButtonState(button, className = "is-confirmed", ms = 900) {
   }, ms);
 }
 
+function isCompactControlDrawerLayout() {
+  return window.matchMedia('(max-width: 1280px), (max-aspect-ratio: 10/11) and (max-width: 1500px)').matches;
+}
+
+function updateControlDrawerSummary() {
+  if (!controlDrawerMetaEl) return;
+  const count = normalizeNames(namesEl.value).length;
+  const base = count ? `${count} pilot${count === 1 ? '' : 's'} loaded` : 'No pilots loaded';
+  controlDrawerMetaEl.textContent = document.body.classList.contains('control-drawer-open')
+    ? `${base} • Tap to close`
+    : `${base} • Tap to open`;
+}
+
+function openControlDrawer() {
+  if (!isCompactControlDrawerLayout()) return;
+  document.body.classList.add('control-drawer-open');
+  if (controlDrawerToggleEl) controlDrawerToggleEl.setAttribute('aria-expanded', 'true');
+  if (controlDrawerBackdropEl) controlDrawerBackdropEl.setAttribute('aria-hidden', 'false');
+  updateControlDrawerSummary();
+}
+
+function closeControlDrawer() {
+  document.body.classList.remove('control-drawer-open');
+  if (controlDrawerToggleEl) controlDrawerToggleEl.setAttribute('aria-expanded', 'false');
+  if (controlDrawerBackdropEl) controlDrawerBackdropEl.setAttribute('aria-hidden', 'true');
+  updateControlDrawerSummary();
+}
+
+function syncControlDrawerLayout() {
+  if (!isCompactControlDrawerLayout()) {
+    closeControlDrawer();
+    return;
+  }
+  updateControlDrawerSummary();
+}
+
 analyzeBtn.addEventListener('click', ()=>{
   analyze();
   flashButtonState(analyzeBtn);
@@ -237,6 +275,17 @@ if (shareBtn) shareBtn.addEventListener('click', ()=>{
   copyShareLink();
   flashButtonState(shareBtn);
 });
+
+if (controlDrawerToggleEl) {
+  controlDrawerToggleEl.addEventListener('click', () => {
+    if (document.body.classList.contains('control-drawer-open')) closeControlDrawer();
+    else openControlDrawer();
+  });
+}
+
+if (controlDrawerBackdropEl) {
+  controlDrawerBackdropEl.addEventListener('click', closeControlDrawer);
+}
 
 clearBtn.addEventListener('click', () => {
   flashButtonState(clearBtn);
@@ -253,19 +302,33 @@ clearBtn.addEventListener('click', () => {
   sumKills.textContent = '0';
   sumGanks.textContent = '0';
   hideGlobalRowHoverCard();
+  updateControlDrawerSummary();
 });
 
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.body.classList.contains('control-drawer-open')) {
+    closeControlDrawer();
+  }
+});
+
+window.addEventListener('resize', syncControlDrawerLayout);
+
 window.addEventListener('hashchange', () => {
-  loadSharePayloadFromHash().catch(error => {
-    console.error(error);
-    setShareStatus('Could not load shared scan data from the link.');
-  });
+  loadSharePayloadFromHash()
+    .catch(error => {
+      console.error(error);
+      setShareStatus('Could not load shared scan data from the link.');
+    })
+    .finally(() => {
+      updateControlDrawerSummary();
+    });
 });
 
 window.addEventListener('storage', (event) => {
   if (event.key === LOCAL_STORAGE_CACHE_KEY) {
     loadCacheFromLocalStorage();
     rerenderFromCacheOnly();
+    updateControlDrawerSummary();
   }
 
   if (event.key === LOCAL_STORAGE_UI_KEY) {
@@ -273,6 +336,7 @@ window.addEventListener('storage', (event) => {
     if (!hadHash) {
       loadUiStateFromLocalStorage();
       rerenderFromCacheOnly();
+      updateControlDrawerSummary();
     }
   }
 });
@@ -281,11 +345,18 @@ window.addEventListener('storage', (event) => {
 loadCacheFromLocalStorage();
 const hadSavedUiState = loadUiStateFromLocalStorage();
 
-loadSharePayloadFromHash().catch(error => {
-  console.error(error);
-  setShareStatus('Could not load shared scan data from the link.');
-});
+loadSharePayloadFromHash()
+  .catch(error => {
+    console.error(error);
+    setShareStatus('Could not load shared scan data from the link.');
+  })
+  .finally(() => {
+    updateControlDrawerSummary();
+  });
 
 if (!String(location.hash || '').startsWith('#scan=') && hadSavedUiState) {
   rerenderFromCacheOnly();
 }
+
+syncControlDrawerLayout();
+updateControlDrawerSummary();
