@@ -34,16 +34,20 @@
       const allGanks = Number(data?.all?.ganks || data?.all?.pods || 0);
       const allStructures = Number(data?.all?.structures || 0);
       const allDeployables = Number(data?.all?.deployables || 0);
+      const allPadding = Number(data?.all?.padding || 0);
+      const allPaddingGanks = Number(data?.all?.paddingGanks || 0);
       const allLastKillAt = data?.all?.lastKillAt ? new Date(data.all.lastKillAt).getTime() : 0;
-      if (allKills || allGanks || allStructures || allDeployables || allLastKillAt) parts.push(`a${allKills}-${allGanks}-${allStructures}-${allDeployables}-${allLastKillAt}`);
+      if (allKills || allGanks || allStructures || allDeployables || allPadding || allPaddingGanks || allLastKillAt) parts.push(`a${allKills}-${allGanks}-${allStructures}-${allDeployables}-${allPadding}-${allPaddingGanks}-${allLastKillAt}`);
 
       for (const [shortKey, longKey] of SPACE_ORDER.slice(1)) {
         const kills = Number(data?.[longKey]?.kills || 0);
         const ganks = Number(data?.[longKey]?.ganks || data?.[longKey]?.pods || 0);
         const structures = Number(data?.[longKey]?.structures || 0);
         const deployables = Number(data?.[longKey]?.deployables || 0);
+        const padding = Number(data?.[longKey]?.padding || 0);
+        const paddingGanks = Number(data?.[longKey]?.paddingGanks || 0);
         const lastKillAt = data?.[longKey]?.lastKillAt ? new Date(data[longKey].lastKillAt).getTime() : 0;
-        if (kills || ganks || structures || deployables || lastKillAt) parts.push(`${shortKey}${kills}-${ganks}-${structures}-${deployables}-${lastKillAt}`);
+        if (kills || ganks || structures || deployables || padding || paddingGanks || lastKillAt) parts.push(`${shortKey}${kills}-${ganks}-${structures}-${deployables}-${padding}-${paddingGanks}-${lastKillAt}`);
       }
 
       return parts.join('_');
@@ -76,19 +80,28 @@
         for (const seg of segments) {
           const tag = seg.slice(0, 1);
           const rest = seg.slice(1);
-          const [killsRaw, ganksRaw, structuresRaw, deployablesRaw, lastKillAtRaw] = rest.split('-');
+          const rawParts = rest.split('-');
+          const hasPaddingAndGanksField = rawParts.length >= 7;
+          const hasPaddingField = rawParts.length === 6;
+          const [killsRaw, ganksRaw, structuresRaw, deployablesRaw, paddingRaw, paddingGanksRaw, lastKillAtRaw] = hasPaddingAndGanksField
+            ? rawParts
+            : hasPaddingField
+              ? [rawParts[0], rawParts[1], rawParts[2], rawParts[3], rawParts[4], 0, rawParts[5]]
+              : [rawParts[0], rawParts[1], rawParts[2], rawParts[3], 0, 0, rawParts[4]];
           const kills = Number(killsRaw || 0);
           const ganks = Number(ganksRaw || 0);
           const structures = Number(structuresRaw || 0);
           const deployables = Number(deployablesRaw || 0);
+          const padding = Number(paddingRaw || 0);
+          const paddingGanks = Number(paddingGanksRaw || 0);
           const lastKillAtMs = Number(lastKillAtRaw || 0);
           const lastKillAt = Number.isFinite(lastKillAtMs) && lastKillAtMs > 0 ? new Date(lastKillAtMs).toISOString() : null;
 
-          if (tag === 'a') bucket.all = { kills, ganks, structures, deployables, lastKillAt };
-          if (tag === 'h') bucket.highsec = { kills, ganks, structures, deployables, lastKillAt };
-          if (tag === 'l') bucket.lowsec = { kills, ganks, structures, deployables, lastKillAt };
-          if (tag === 'n') bucket.nullsec = { kills, ganks, structures, deployables, lastKillAt };
-          if (tag === 'w') bucket.wormhole = { kills, ganks, structures, deployables, lastKillAt };
+          if (tag === 'a') bucket.all = { kills, ganks, structures, deployables, padding, paddingGanks, lastKillAt };
+          if (tag === 'h') bucket.highsec = { kills, ganks, structures, deployables, padding, paddingGanks, lastKillAt };
+          if (tag === 'l') bucket.lowsec = { kills, ganks, structures, deployables, padding, paddingGanks, lastKillAt };
+          if (tag === 'n') bucket.nullsec = { kills, ganks, structures, deployables, padding, paddingGanks, lastKillAt };
+          if (tag === 'w') bucket.wormhole = { kills, ganks, structures, deployables, padding, paddingGanks, lastKillAt };
         }
 
         months[monthKey] = bucket;
@@ -155,8 +168,10 @@
         `s=${spaceFilterEl.value}`,
         `k=${highThreatKillsEl.value}`,
         `p=${highThreatGanksEl.value}`,
+        `ap=${autoScanOnPasteEl && autoScanOnPasteEl.checked ? '1' : '0'}`,
         `st=${includeStructuresEl.checked ? '1' : '0'}`,
-        `dp=${includeDeployablesEl.checked ? '1' : '0'}`
+        `dp=${includeDeployablesEl.checked ? '1' : '0'}`,
+        `pd=${includePaddingEl && includePaddingEl.checked ? '1' : '0'}`
       ].join('&');
 
       return `${settings}&d=${pilots.join('!')}`;
@@ -174,16 +189,20 @@
       const spaceFilter = params.get('s');
       const highKills = params.get('k');
       const highGanks = params.get('p');
+      const autoScanOnPaste = params.get('ap');
       const includeStructures = params.get('st');
       const includeDeployables = params.get('dp');
+      const includePadding = params.get('pd');
       const data = params.get('d');
 
       if (monthsBack) monthsBackEl.value = monthsBack;
       if (spaceFilter) spaceFilterEl.value = spaceFilter;
       if (highKills) highThreatKillsEl.value = highKills;
       if (highGanks) highThreatGanksEl.value = highGanks;
+      if (autoScanOnPaste !== null && autoScanOnPasteEl) autoScanOnPasteEl.checked = autoScanOnPaste !== '0';
       if (includeStructures !== null && includeStructuresEl) includeStructuresEl.checked = includeStructures !== '0';
       if (includeDeployables !== null && includeDeployablesEl) includeDeployablesEl.checked = includeDeployables !== '0';
+      if (includePadding !== null && includePaddingEl) includePaddingEl.checked = includePadding !== '0';
 
       if (!data) return false;
 
@@ -319,7 +338,8 @@
         const members = entries.filter(entry => entry.corpId === corpId);
         const hotMembers = members.filter(entry => getHoursSince(getCountsForMonths(entry, Number(monthsBackEl.value), spaceFilterEl.value, {
           includeStructures: includeStructuresEl.checked,
-          includeDeployables: includeDeployablesEl.checked
+          includeDeployables: includeDeployablesEl.checked,
+          includePadding: includePaddingEl ? includePaddingEl.checked : true
         }).lastKillAt) <= 24 * 7);
 
         if (hotMembers.length >= 2) {

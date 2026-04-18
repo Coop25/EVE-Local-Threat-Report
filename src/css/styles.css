@@ -880,6 +880,17 @@ button {
 @media (max-width: 1180px) {
   .overview-grid {
     grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .stat-grid {
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  .intel-band {
+    margin-top: 8px;
+    margin-bottom: 10px;
   }
 
   .contacts-shell {
@@ -935,10 +946,36 @@ button {
   .intel-column {
     min-height: 0;
     grid-template-rows: auto auto auto;
+    gap: 18px;
   }
 
   .overview-grid {
     grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .stat-grid {
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  .stat-tile {
+    min-height: 104px;
+    padding: 14px;
+  }
+
+  .intel-band {
+    padding: 14px 16px;
+    margin-top: 8px;
+    margin-bottom: 10px;
+  }
+
+  #intelSummary {
+    line-height: 1.45;
+  }
+
+  #intelSummary .mini-pill-link {
+    margin: 2px 8px 2px 0;
   }
 
   .contacts-shell {
@@ -1095,8 +1132,8 @@ button {
 }
 
 .pilot-name-link,
-.results-table td:first-child>a,
-.results-table td:first-child a:first-of-type {
+.results-table td:first-child>a:not(.mini-pill-link),
+.results-table td:first-child a:first-of-type:not(.mini-pill-link) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1111,10 +1148,26 @@ button {
 }
 
 .pilot-name-link:hover,
-.results-table td:first-child>a:hover,
-.results-table td:first-child a:first-of-type:hover {
+.results-table td:first-child>a:not(.mini-pill-link):hover,
+.results-table td:first-child a:first-of-type:not(.mini-pill-link):hover {
   color: #dce5ff;
   border-bottom-color: rgba(216, 169, 88, .55);
+}
+
+.mini-pill-link {
+  display: inline-block;
+  text-decoration: none;
+  border-bottom: 0;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.mini-pill-link:hover {
+  color: inherit;
+  border-bottom: 0;
+  box-shadow: none;
 }
 
 .results-table td:first-child>*:not(:first-child) {
@@ -1367,13 +1420,13 @@ button {
 .results-table a {
   color: #b7c6de;
   text-decoration: none;
-  border-bottom: 1px solid rgba(183, 198, 222, .32);
-  transition: color .12s ease, border-color .12s ease, text-shadow .12s ease;
+  border-bottom: 0;
+  transition: color .12s ease, text-shadow .12s ease;
 }
 
 .results-table a:hover {
   color: #d9e4f2;
-  border-bottom-color: rgba(216, 169, 88, .55);
+  border-bottom: 0;
   text-shadow: 0 0 10px rgba(151, 202, 252, .12);
 }
 

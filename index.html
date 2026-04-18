@@ -57,10 +57,18 @@
 
         <label class="field-block" for="names">
           <span class="field-block__label">Local roster</span>
-          <span class="field-block__help">Paste one pilot per line. Duplicates are ignored automatically.</span>
+          <span class="field-block__help">Paste one pilot per line. Duplicates are ignored automatically, and you can paste a fresh multi-line local from anywhere on the page.</span>
           <textarea id="names" class="intel-textarea" placeholder="Paste local chat roster here..." spellcheck="false"
             autocomplete="off"></textarea>
         </label>
+
+        <div class="toggle-panel">
+          <p class="field-block__label">Paste behavior</p>
+          <label class="toggle-row" for="autoScanOnPaste">
+            <input id="autoScanOnPaste" type="checkbox" />
+            <span>Auto-scan after paste</span>
+          </label>
+        </div>
 
         <div class="action-cluster action-cluster--sidebar">
           <button id="analyzeBtn" class="btn btn-primary" type="button">Scan Local</button>
@@ -99,24 +107,28 @@
         <div class="threshold-grid">
           <label class="field-block" for="highThreatKills">
             <span class="field-block__label">High threat if kills ≥</span>
-            <input id="highThreatKills" class="intel-input" type="number" min="1" step="1" value="25" />
+            <input id="highThreatKills" class="intel-input" type="number" min="1" step="1" value="3" />
           </label>
 
           <label class="field-block" for="highThreatGanks">
             <span class="field-block__label">High threat if ganks ≥</span>
-            <input id="highThreatGanks" class="intel-input" type="number" min="0" step="1" value="4" />
+            <input id="highThreatGanks" class="intel-input" type="number" min="0" step="1" value="0" />
           </label>
         </div>
 
         <div class="toggle-panel">
           <p class="field-block__label">Kill classes included</p>
           <label class="toggle-row" for="includeStructures">
-            <input id="includeStructures" type="checkbox" checked />
+            <input id="includeStructures" type="checkbox" />
             <span>Structure kills</span>
           </label>
           <label class="toggle-row" for="includeDeployables">
-            <input id="includeDeployables" type="checkbox" checked />
+            <input id="includeDeployables" type="checkbox" />
             <span>Deployable kills</span>
+          </label>
+          <label class="toggle-row" for="includePadding">
+            <input id="includePadding" type="checkbox" />
+            <span>Padding kills</span>
           </label>
         </div>
 

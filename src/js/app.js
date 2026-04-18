@@ -16,13 +16,14 @@ async function collectResultsFromCurrentInputs(showProgress = true) {
 
   const monthsBack = Number(monthsBackEl.value);
   const thresholds = {
-    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
-    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
+    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 3),
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 0)
   };
   const spaceFilter = spaceFilterEl.value;
   const filterOptions = {
     includeStructures: includeStructuresEl.checked,
-    includeDeployables: includeDeployablesEl.checked
+    includeDeployables: includeDeployablesEl.checked,
+    includePadding: includePaddingEl ? includePaddingEl.checked : true
   };
 
   prunePilotCache();
@@ -94,9 +95,19 @@ async function collectResultsFromCurrentInputs(showProgress = true) {
         .then(() => {
           if (analysisToken !== currentAnalysisToken) return;
           rerenderProgressive();
+          return hydrateEntityIntelForEntry(entry, monthsBack, () => {
+            if (analysisToken !== currentAnalysisToken) return;
+            rerenderProgressive();
+          });
         })
         .catch(error => console.error(error));
       profileTasks.push(profileTask);
+    } else if (entry.corpId || entry.allianceId) {
+      const entityTask = hydrateEntityIntelForEntry(entry, monthsBack, () => {
+        if (analysisToken !== currentAnalysisToken) return;
+        rerenderProgressive();
+      });
+      if (entityTask) profileTasks.push(entityTask);
     }
   }
 
@@ -152,13 +163,14 @@ function rerenderFromCacheOnly() {
 
   const monthsBack = Number(monthsBackEl.value);
   const thresholds = {
-    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 25),
-    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 4)
+    highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 3),
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 0)
   };
   const spaceFilter = spaceFilterEl.value;
   const filterOptions = {
     includeStructures: includeStructuresEl.checked,
-    includeDeployables: includeDeployablesEl.checked
+    includeDeployables: includeDeployablesEl.checked,
+    includePadding: includePaddingEl ? includePaddingEl.checked : true
   };
 
   const entries = [];
@@ -171,6 +183,12 @@ function rerenderFromCacheOnly() {
   const groupContext = buildGroupContext(entries);
   const results = entries.map(entry => summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, filterOptions, groupContext));
 
+  for (const entry of entries) {
+    const entityTask = hydrateEntityIntelForEntry(entry, monthsBack, () => {
+      rerenderFromCacheOnly();
+    });
+  }
+
   if (results.length > 0) {
     renderResults(results);
     setStatus('Updated view from cached month summaries.');
@@ -179,12 +197,89 @@ function rerenderFromCacheOnly() {
   }
 }
 
-// Persist UI changes so the tool can recover its last-used settings after refreshes.
-namesEl.addEventListener('input', () => {
+function syncNamesInputUi() {
   prunePilotCache();
   saveUiStateToLocalStorage();
   setShareStatus('');
   updateControlDrawerSummary();
+}
+
+function replaceNamesFromBulkPaste(rawText) {
+  const normalizedNames = normalizeNames(rawText);
+  if (!normalizedNames.length) return false;
+
+  namesEl.value = normalizedNames.join('\n');
+  syncNamesInputUi();
+  rerenderFromCacheOnly();
+  hideGlobalRowHoverCard();
+  namesEl.focus();
+  namesEl.setSelectionRange(0, namesEl.value.length);
+  setStatus(`Loaded ${normalizedNames.length} pilot(s) from paste. Press Scan Local to refresh intel.`);
+  return true;
+}
+
+function hydrateEntityIntelForEntry(entry, monthsBack, rerender) {
+  const tasks = [];
+  if (entry?.corpId && (!getEntitySummaryEntry('corporation', entry.corpId) || isEntitySummaryPending('corporation', entry.corpId))) {
+    tasks.push(ensureEntityMonthsCached('corporation', entry.corpId, monthsBack, entry.corpName || `corporation ${entry.corpId}`));
+  }
+  if (entry?.allianceId && (!getEntitySummaryEntry('alliance', entry.allianceId) || isEntitySummaryPending('alliance', entry.allianceId))) {
+    tasks.push(ensureEntityMonthsCached('alliance', entry.allianceId, monthsBack, entry.allianceName || `alliance ${entry.allianceId}`));
+  }
+  if (!tasks.length) return null;
+
+  return Promise.allSettled(tasks)
+    .then(() => {
+      rerender();
+    })
+    .catch(error => console.error(error));
+}
+
+function shouldHandleRosterPaste(rawText) {
+  if (!rawText || !/[\r\n]/.test(rawText)) return false;
+  return normalizeNames(rawText).length > 0;
+}
+
+async function handleBulkRosterPaste(rawText, options = {}) {
+  if (!replaceNamesFromBulkPaste(rawText)) return false;
+  const autoScan = options.forceAutoScan || (autoScanOnPasteEl && autoScanOnPasteEl.checked);
+  if (autoScan) await analyze();
+  return true;
+}
+
+// Persist UI changes so the tool can recover its last-used settings after refreshes.
+namesEl.addEventListener('input', () => {
+  syncNamesInputUi();
+});
+
+namesEl.addEventListener('paste', (event) => {
+  const pastedText = event.clipboardData ? event.clipboardData.getData('text') : '';
+  if (!shouldHandleRosterPaste(pastedText)) return;
+
+  const existingNames = normalizeNames(namesEl.value);
+  const hasExistingRoster = existingNames.length > 0;
+  const hasSelection = namesEl.selectionStart !== namesEl.selectionEnd;
+
+  if (!hasExistingRoster || hasSelection) return;
+
+  const incomingNames = normalizeNames(pastedText);
+  const incomingText = incomingNames.join('\n');
+  const currentText = existingNames.join('\n');
+  if (!incomingText || incomingText === currentText) {
+    event.preventDefault();
+    namesEl.focus();
+    namesEl.setSelectionRange(0, namesEl.value.length);
+    if (incomingText === currentText) {
+      setStatus(`Local roster already matches the pasted list (${incomingNames.length} pilot(s)).`);
+    }
+    return;
+  }
+
+  event.preventDefault();
+  handleBulkRosterPaste(pastedText).catch(error => {
+    console.error(error);
+    setStatus(`Error: ${error.message}`);
+  });
 });
 
 monthsBackEl.addEventListener('change', () => {
@@ -220,6 +315,17 @@ includeStructuresEl.addEventListener('change', () => {
 includeDeployablesEl.addEventListener('change', () => {
   saveUiStateToLocalStorage();
   rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+if (includePaddingEl) includePaddingEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
+  rerenderFromCacheOnly();
+  setShareStatus('');
+});
+
+if (autoScanOnPasteEl) autoScanOnPasteEl.addEventListener('change', () => {
+  saveUiStateToLocalStorage();
   setShareStatus('');
 });
 
@@ -295,6 +401,7 @@ clearBtn.addEventListener('click', () => {
   hideScanStatusToast();
   setShareStatus('');
   pilotSummaryCache.clear();
+  entitySummaryCache.clear();
   clearLocalStorageState();
   renderResults([]);
   sumPilots.textContent = '0';
@@ -309,6 +416,19 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && document.body.classList.contains('control-drawer-open')) {
     closeControlDrawer();
   }
+});
+
+window.addEventListener('paste', (event) => {
+  const pastedText = event.clipboardData ? event.clipboardData.getData('text') : '';
+  if (!shouldHandleRosterPaste(pastedText)) return;
+  if (event.defaultPrevented) return;
+  if (event.target === namesEl) return;
+
+  event.preventDefault();
+  handleBulkRosterPaste(pastedText).catch(error => {
+    console.error(error);
+    setStatus(`Error: ${error.message}`);
+  });
 });
 
 window.addEventListener('resize', syncControlDrawerLayout);

@@ -64,14 +64,14 @@ function renderIntelSummary(rows) {
   for (const row of uniqueCorpRows) {
     const style = escapeHtml(getNameColorStyle(row.corpName));
     groupTags.push(
-      `<span class="mini-pill profile shared-group-pill" style="${style}">${row.corpGroupCount}x Corp: ${escapeHtml(row.corpName)}</span>`
+      `<a class="mini-pill-link" href="${escapeHtml(row.corpZkillUrl || '#')}" target="_blank" rel="noopener noreferrer"><span class="mini-pill profile shared-group-pill" style="${style}">${row.corpGroupCount}x Corp: ${escapeHtml(row.corpName)}</span></a>`
     );
   }
 
   for (const row of uniqueAllianceRows) {
     const style = escapeHtml(getNameColorStyle(row.allianceName));
     groupTags.push(
-      `<span class="mini-pill alliance shared-group-pill" style="${style}">${row.allianceGroupCount}x Alliance: ${escapeHtml(row.allianceName)}</span>`
+      `<a class="mini-pill-link" href="${escapeHtml(row.allianceZkillUrl || '#')}" target="_blank" rel="noopener noreferrer"><span class="mini-pill alliance shared-group-pill" style="${style}">${row.allianceGroupCount}x Alliance: ${escapeHtml(row.allianceName)}</span></a>`
     );
   }
 
@@ -135,7 +135,13 @@ function renderResults(rows) {
       const corpLabel = row.corpGroupCount >= 2
         ? `${row.corpGroupCount}x Corp: ${row.corpName}`
         : `Corp: ${row.corpName}`;
-      intelBits.push(`<span class="mini-pill profile" style="${corpStyle}">${escapeHtml(corpLabel)}</span>`);
+      const corpActivity = row.corpActivity
+        ? ` (${Number(row.corpActivity.kills || 0)}K/${Number(row.corpActivity.ganks || 0)}G)`
+        : '';
+      const corpTitle = row.corpActivity
+        ? `${row.corpName}: ${Number(row.corpActivity.kills || 0)} kills and ${Number(row.corpActivity.ganks || 0)} ganks in the selected scan window.`
+        : `${row.corpName} zKillboard page`;
+      intelBits.push(`<a class="mini-pill-link" href="${escapeHtml(row.corpZkillUrl || '#')}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(corpTitle)}" aria-label="${escapeHtml(corpTitle)}"><span class="mini-pill profile" style="${corpStyle}">${escapeHtml(corpLabel + corpActivity)}</span></a>`);
     }
 
     if (row.allianceName) {
@@ -143,7 +149,13 @@ function renderResults(rows) {
       const allianceLabel = row.allianceGroupCount >= 2
         ? `${row.allianceGroupCount}x Alliance: ${row.allianceName}`
         : `Alliance: ${row.allianceName}`;
-      intelBits.push(`<span class="mini-pill alliance" style="${allianceStyle}">${escapeHtml(allianceLabel)}</span>`);
+      const allianceActivity = row.allianceActivity
+        ? ` (${Number(row.allianceActivity.kills || 0)}K/${Number(row.allianceActivity.ganks || 0)}G)`
+        : '';
+      const allianceTitle = row.allianceActivity
+        ? `${row.allianceName}: ${Number(row.allianceActivity.kills || 0)} kills and ${Number(row.allianceActivity.ganks || 0)} ganks in the selected scan window.`
+        : `${row.allianceName} zKillboard page`;
+      intelBits.push(`<a class="mini-pill-link" href="${escapeHtml(row.allianceZkillUrl || '#')}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(allianceTitle)}" aria-label="${escapeHtml(allianceTitle)}"><span class="mini-pill alliance" style="${allianceStyle}">${escapeHtml(allianceLabel + allianceActivity)}</span></a>`);
     }
 
     if (row.fleetSignal) {

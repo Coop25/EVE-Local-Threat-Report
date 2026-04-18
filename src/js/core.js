@@ -8,6 +8,10 @@ var ESI_IDS_URL = 'https://esi.evetech.net/latest/universe/ids/';
 var ESI_NAMES_URL = 'https://esi.evetech.net/latest/universe/names/';
 var ESI_CHARACTER_URL = 'https://esi.evetech.net/latest/characters/';
 var ZKILL_API_BASE = 'https://zkillboard.com/api';
+var ENTITY_TYPE_CONFIG = {
+  corporation: { apiModifier: 'corporationID', zkillPath: 'corporation' },
+  alliance: { apiModifier: 'allianceID', zkillPath: 'alliance' }
+};
 
 var ZKILL_REQUESTS_PER_MINUTE = 50;
 var ESI_REQUESTS_PER_MINUTE = 90;
@@ -40,8 +44,10 @@ var monthsBackEl = document.getElementById('monthsBack');
 var highThreatKillsEl = document.getElementById('highThreatKills');
 var highThreatGanksEl = document.getElementById('highThreatGanks');
 var spaceFilterEl = document.getElementById('spaceFilter');
+var autoScanOnPasteEl = document.getElementById('autoScanOnPaste');
 var includeStructuresEl = document.getElementById('includeStructures');
 var includeDeployablesEl = document.getElementById('includeDeployables');
+var includePaddingEl = document.getElementById('includePadding');
 var analyzeBtn = document.getElementById('analyzeBtn');
 var shareBtn = document.getElementById('shareBtn');
 var clearBtn = document.getElementById('clearBtn');
@@ -64,11 +70,13 @@ var controlDrawerBackdropEl = document.getElementById('controlDrawerBackdrop');
 
 var typeCache = new Map();
 var pilotSummaryCache = new Map();
+var entitySummaryCache = new Map();
 var characterInfoCache = new Map();
 var requestQueueState = {
   zkill: { nextAvailableAt: 0 },
   esi: { nextAvailableAt: 0 }
 };
+var entityScanQueue = Promise.resolve();
 var currentAnalysisToken = 0;
 var hoveredRowEl = null;
 var statusToastMode = 'idle';
@@ -167,8 +175,23 @@ function setShareStatus(message, options = {}) {
 function saveCacheToLocalStorage() {
   try {
     prunePilotCache();
-    const serialized = Object.fromEntries(pilotSummaryCache.entries());
-    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify(serialized));
+    const serializedPilots = Object.fromEntries(pilotSummaryCache.entries());
+    const serializedEntities = Object.fromEntries(
+      [...entitySummaryCache.entries()].map(([key, entry]) => [
+        key,
+        {
+          cachedAt: entry.cachedAt,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+          zkillUrl: entry.zkillUrl,
+          months: entry.months || {}
+        }
+      ])
+    );
+    localStorage.setItem(LOCAL_STORAGE_CACHE_KEY, JSON.stringify({
+      pilots: serializedPilots,
+      entities: serializedEntities
+    }));
   } catch (error) {
     console.warn('Failed to save pilot cache to localStorage.', error);
   }
@@ -182,13 +205,34 @@ function loadCacheFromLocalStorage() {
 
     const parsed = JSON.parse(raw);
     pilotSummaryCache.clear();
-    for (const [key, entry] of Object.entries(parsed || {})) {
+    entitySummaryCache.clear();
+
+    const pilotEntries = (parsed && typeof parsed === 'object' && parsed.pilots && typeof parsed.pilots === 'object')
+      ? parsed.pilots
+      : parsed;
+    const entityEntries = (parsed && typeof parsed === 'object' && parsed.entities && typeof parsed.entities === 'object')
+      ? parsed.entities
+      : {};
+
+    for (const [key, entry] of Object.entries(pilotEntries || {})) {
       if (!entry || typeof entry !== 'object') continue;
       pilotSummaryCache.set(key, entry);
     }
 
+    for (const [key, entry] of Object.entries(entityEntries || {})) {
+      if (!entry || typeof entry !== 'object') continue;
+      entitySummaryCache.set(key, {
+        cachedAt: entry.cachedAt,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        zkillUrl: entry.zkillUrl,
+        months: entry.months || {},
+        pendingPromise: null
+      });
+    }
+
     prunePilotCache();
-    return pilotSummaryCache.size > 0;
+    return pilotSummaryCache.size > 0 || entitySummaryCache.size > 0;
   } catch (error) {
     console.warn('Failed to load pilot cache from localStorage.', error);
     return false;
@@ -203,8 +247,10 @@ function getUiState() {
     spaceFilter: spaceFilterEl.value,
     highThreatKills: highThreatKillsEl.value,
     highThreatGanks: highThreatGanksEl.value,
+    autoScanOnPaste: autoScanOnPasteEl ? autoScanOnPasteEl.checked : false,
     includeStructures: includeStructuresEl.checked,
-    includeDeployables: includeDeployablesEl.checked
+    includeDeployables: includeDeployablesEl.checked,
+    includePadding: includePaddingEl ? includePaddingEl.checked : true
   };
 }
 
@@ -232,8 +278,10 @@ function loadUiStateFromLocalStorage() {
     if (state.highThreatKills !== undefined) highThreatKillsEl.value = String(state.highThreatKills);
     if (state.highThreatGanks !== undefined) highThreatGanksEl.value = String(state.highThreatGanks);
     else if (state.highThreatPods !== undefined) highThreatGanksEl.value = String(state.highThreatPods);
+    if (typeof state.autoScanOnPaste === 'boolean' && autoScanOnPasteEl) autoScanOnPasteEl.checked = state.autoScanOnPaste;
     if (typeof state.includeStructures === 'boolean') includeStructuresEl.checked = state.includeStructures;
     if (typeof state.includeDeployables === 'boolean') includeDeployablesEl.checked = state.includeDeployables;
+    if (typeof state.includePadding === 'boolean' && includePaddingEl) includePaddingEl.checked = state.includePadding;
     return true;
   } catch (error) {
     console.warn('Failed to load UI state from localStorage.', error);
@@ -375,6 +423,7 @@ function getNameColorStyle(name) {
 function buildThreatExplanation(entry, counts, thresholds, spaceFilter, options, activityLabel, corpName, allianceName, groupSignals = []) {
   const includeStructures = options.includeStructures !== false;
   const includeDeployables = options.includeDeployables !== false;
+  const includePadding = options.includePadding !== false;
   const lines = [
     `${counts.kills} filtered kill${counts.kills === 1 ? '' : 's'} in ${spaceFilter}.`,
     `${counts.ganks} gank${counts.ganks === 1 ? '' : 's'}.`,
@@ -386,6 +435,8 @@ function buildThreatExplanation(entry, counts, thresholds, spaceFilter, options,
   if (allianceName) lines.push(`Alliance: ${allianceName}.`);
   if (!includeStructures && counts.structures > 0) lines.push(`Ignored ${counts.structures} structure kill${counts.structures === 1 ? '' : 's'}.`);
   if (!includeDeployables && counts.deployables > 0) lines.push(`Ignored ${counts.deployables} deployable kill${counts.deployables === 1 ? '' : 's'}.`);
+  if (!includePadding && counts.padding > 0) lines.push(`Ignored ${counts.padding} padding kill${counts.padding === 1 ? '' : 's'}.`);
+  if (!includePadding && counts.paddingGanks > 0) lines.push(`Ignored ${counts.paddingGanks} padding gank${counts.paddingGanks === 1 ? '' : 's'}.`);
   if (counts.kills >= thresholds.highThreatKills) lines.push(`Crossed kill threshold (${thresholds.highThreatKills}).`);
   if (counts.ganks >= thresholds.highThreatGanks) lines.push(`Crossed gank threshold (${thresholds.highThreatGanks}).`);
   for (const signal of groupSignals) lines.push(signal);
@@ -461,13 +512,31 @@ function buildPilotCacheKey(name) {
 }
 
 
+function buildEntityCacheKey(entityType, entityId) {
+  return `${String(entityType || '').toLowerCase()}:${Number(entityId) || 0}`;
+}
+
+
+function getEntityTypeConfig(entityType) {
+  return ENTITY_TYPE_CONFIG[String(entityType || '').toLowerCase()] || null;
+}
+
+
+function getEntityZkillUrl(entityType, entityId) {
+  const config = getEntityTypeConfig(entityType);
+  const safeId = Number(entityId) || 0;
+  if (!config || !safeId) return '#';
+  return `https://zkillboard.com/${config.zkillPath}/${safeId}/`;
+}
+
+
 function makeEmptyCounts() {
   return {
-    all: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
-    highsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
-    lowsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
-    nullsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null },
-    wormhole: { kills: 0, ganks: 0, structures: 0, deployables: 0, lastKillAt: null }
+    all: { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, lastKillAt: null },
+    highsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, lastKillAt: null },
+    lowsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, lastKillAt: null },
+    nullsec: { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, lastKillAt: null },
+    wormhole: { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, lastKillAt: null }
   };
 }
 
@@ -605,6 +674,12 @@ function getKillCategoryId(kill) {
 }
 
 
+function hasKillLabel(kill, expectedLabel) {
+  const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
+  return labels.includes(expectedLabel);
+}
+
+
 function classifyKillSpace(kill) {
   const labels = Array.isArray(kill?.zkb?.labels) ? kill.zkb.labels : [];
   const flags = { all: true };
@@ -647,6 +722,38 @@ async function fetchCharacterKillsForMonth(characterId, year, month, maxPages = 
   });
 }
 
+
+async function fetchEntityKillsForMonth(entityType, entityId, year, month, maxPages = 1) {
+  const config = getEntityTypeConfig(entityType);
+  const safeId = Number(entityId) || 0;
+  if (!config || !safeId) return [];
+
+  const allKills = [];
+
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${ZKILL_API_BASE}/kills/${config.apiModifier}/${safeId}/year/${year}/month/${month}/page/${page}/`;
+    const pageData = await fetchJson(url, {
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip',
+        'User-Agent': 'EVE Local Threat Report'
+      }
+    });
+
+    if (!Array.isArray(pageData) || pageData.length === 0) break;
+    allKills.push(...pageData);
+    if (pageData.length < 200) break;
+  }
+
+  const seen = new Set();
+  return allKills.filter(kill => {
+    const key = String(kill.killmail_id || '') + ':' + String(kill.zkb && kill.zkb.hash ? kill.zkb.hash : '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Reduce raw zKill killmail data into counts for each supported space bucket.
 
 async function summarizeKillsForMonth(kills) {
@@ -658,6 +765,7 @@ async function summarizeKillsForMonth(kills) {
     const categoryId = getKillCategoryId(kill);
     const isStructure = categoryId === STRUCTURE_CATEGORY_ID;
     const isDeployable = categoryId === DEPLOYABLE_CATEGORY_ID;
+    const isPadding = hasKillLabel(kill, 'padding');
     const spaceFlags = classifyKillSpace(kill);
     const killTime = kill.killmail_time || null;
 
@@ -667,6 +775,8 @@ async function summarizeKillsForMonth(kills) {
         if (isGanked) counts[key].ganks += 1;
         if (isStructure) counts[key].structures += 1;
         if (isDeployable) counts[key].deployables += 1;
+        if (isPadding) counts[key].padding += 1;
+        if (isPadding && isGanked) counts[key].paddingGanks += 1;
 
         if (killTime) {
           const existing = counts[key].lastKillAt;
@@ -717,6 +827,31 @@ function ensurePilotCacheEntry(pilot) {
 }
 
 
+function ensureEntityCacheEntry(entityType, entityId) {
+  const cacheKey = buildEntityCacheKey(entityType, entityId);
+  let entry = entitySummaryCache.get(cacheKey);
+
+  if (!entry) {
+    entry = {
+      cachedAt: Date.now(),
+      entityType: String(entityType || '').toLowerCase(),
+      entityId: Number(entityId) || null,
+      zkillUrl: getEntityZkillUrl(entityType, entityId),
+      months: {},
+      pendingPromise: null
+    };
+    entitySummaryCache.set(cacheKey, entry);
+  } else {
+    entry.cachedAt = Date.now();
+    entry.entityType = String(entityType || '').toLowerCase();
+    entry.entityId = Number(entityId) || entry.entityId || null;
+    entry.zkillUrl = getEntityZkillUrl(entityType, entityId);
+  }
+
+  return entry;
+}
+
+
 async function ensurePilotProfileCached(entry) {
   if (!entry?.characterId) return entry;
   if (entry.corpId || entry.corpName || entry.allianceId || entry.allianceName) return entry;
@@ -730,6 +865,70 @@ async function ensurePilotProfileCached(entry) {
     entry.allianceName = entityNames.get(entry.allianceId) || '';
     entry.cachedAt = Date.now();
     saveCacheToLocalStorage();
+  }
+
+  return entry;
+}
+
+
+function getEntitySummaryEntry(entityType, entityId) {
+  if (!entityType || !entityId) return null;
+  const cacheKey = buildEntityCacheKey(entityType, entityId);
+  const entry = entitySummaryCache.get(cacheKey);
+  if (!entry) return null;
+  const cacheExpired = !entry.cachedAt || (Date.now() - entry.cachedAt) > CACHE_TTL_MS;
+  if (cacheExpired) {
+    entitySummaryCache.delete(cacheKey);
+    return null;
+  }
+  return entry;
+}
+
+
+function isEntitySummaryPending(entityType, entityId) {
+  const entry = getEntitySummaryEntry(entityType, entityId);
+  return Boolean(entry && entry.pendingPromise);
+}
+
+
+async function ensureEntityMonthsCached(entityType, entityId, monthsBack, entityLabel = '') {
+  const cacheKey = buildEntityCacheKey(entityType, entityId);
+  const existing = entitySummaryCache.get(cacheKey);
+  const cacheExpired = !existing || !existing.cachedAt || (Date.now() - existing.cachedAt) > CACHE_TTL_MS;
+
+  if (cacheExpired && existing) entitySummaryCache.delete(cacheKey);
+
+  const entry = ensureEntityCacheEntry(entityType, entityId);
+  if (!entry.entityId) return entry;
+  if (entry.pendingPromise) {
+    await entry.pendingPromise;
+    return entry;
+  }
+
+  const neededMonths = getNeededMonths(monthsBack);
+  const missingMonths = neededMonths.filter(m => !entry.months[m.monthKey]);
+  if (missingMonths.length === 0) return entry;
+
+  const queuedPromise = entityScanQueue.then(async () => {
+    for (let i = 0; i < missingMonths.length; i++) {
+      const monthInfo = missingMonths[i];
+      const label = entityLabel || `${entry.entityType} ${entry.entityId}`;
+      setStatus(`Scanning ${label} on zKill (${i + 1}/${missingMonths.length} month(s) needed)...`);
+      const kills = await fetchEntityKillsForMonth(entry.entityType, entry.entityId, monthInfo.year, monthInfo.month, 1);
+      const counts = await summarizeKillsForMonth(kills);
+      entry.months[monthInfo.monthKey] = counts;
+      entry.cachedAt = Date.now();
+      saveCacheToLocalStorage();
+    }
+  });
+
+  entityScanQueue = queuedPromise.catch(() => {});
+  entry.pendingPromise = queuedPromise;
+
+  try {
+    await queuedPromise;
+  } finally {
+    if (entry.pendingPromise === queuedPromise) entry.pendingPromise = null;
   }
 
   return entry;
@@ -770,25 +969,32 @@ async function ensurePilotMonthsCached(pilot, monthsBack, pilotCounts) {
 
 
 function getCountsForMonths(entry, monthsBack, spaceFilter, options = {}) {
-  const totals = { kills: 0, ganks: 0, structures: 0, deployables: 0, excludedKills: 0, lastKillAt: null };
+  const totals = { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0, excludedKills: 0, lastKillAt: null };
   const neededMonths = getNeededMonths(monthsBack);
   const includeStructures = options.includeStructures !== false;
   const includeDeployables = options.includeDeployables !== false;
+  const includePadding = options.includePadding !== false;
 
   for (const monthInfo of neededMonths) {
     const monthCounts = entry.months[monthInfo.monthKey];
     if (!monthCounts) continue;
-    const bucket = monthCounts[spaceFilter] || { kills: 0, ganks: 0, structures: 0, deployables: 0 };
+    const bucket = monthCounts[spaceFilter] || { kills: 0, ganks: 0, structures: 0, deployables: 0, padding: 0, paddingGanks: 0 };
     const structures = Number(bucket.structures || 0);
     const deployables = Number(bucket.deployables || 0);
+    const padding = Number(bucket.padding || 0);
+    const paddingGanks = Number(bucket.paddingGanks || 0);
     const excludedStructures = includeStructures ? 0 : structures;
     const excludedDeployables = includeDeployables ? 0 : deployables;
+    const excludedPadding = includePadding ? 0 : padding;
+    const excludedPaddingGanks = includePadding ? 0 : paddingGanks;
 
-    totals.kills += Math.max(0, Number(bucket.kills || 0) - excludedStructures - excludedDeployables);
-    totals.ganks += Number(bucket.ganks || 0);
+    totals.kills += Math.max(0, Number(bucket.kills || 0) - excludedStructures - excludedDeployables - excludedPadding);
+    totals.ganks += Math.max(0, Number(bucket.ganks || 0) - excludedPaddingGanks);
     totals.structures += structures;
     totals.deployables += deployables;
-    totals.excludedKills += excludedStructures + excludedDeployables;
+    totals.padding += padding;
+    totals.paddingGanks += paddingGanks;
+    totals.excludedKills += excludedStructures + excludedDeployables + excludedPadding;
     if (bucket.lastKillAt) {
       if (!totals.lastKillAt || new Date(bucket.lastKillAt).getTime() > new Date(totals.lastKillAt).getTime()) {
         totals.lastKillAt = bucket.lastKillAt;
@@ -803,8 +1009,17 @@ function getCountsForMonths(entry, monthsBack, spaceFilter, options = {}) {
 
 function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, options = {}, context = {}) {
   const counts = getCountsForMonths(entry, monthsBack, spaceFilter, options);
+  const corpEntityEntry = entry.corpId ? getEntitySummaryEntry('corporation', entry.corpId) : null;
+  const allianceEntityEntry = entry.allianceId ? getEntitySummaryEntry('alliance', entry.allianceId) : null;
+  const corpEntityCounts = (corpEntityEntry && !corpEntityEntry.pendingPromise && Object.keys(corpEntityEntry.months || {}).length > 0)
+    ? getCountsForMonths(corpEntityEntry, monthsBack, spaceFilter, options)
+    : null;
+  const allianceEntityCounts = (allianceEntityEntry && !allianceEntityEntry.pendingPromise && Object.keys(allianceEntityEntry.months || {}).length > 0)
+    ? getCountsForMonths(allianceEntityEntry, monthsBack, spaceFilter, options)
+    : null;
   const includeStructures = options.includeStructures !== false;
   const includeDeployables = options.includeDeployables !== false;
+  const includePadding = options.includePadding !== false;
   const activity = getActivityBadge(counts.lastKillAt, counts.kills > 0 || counts.ganks > 0);
   const recencyWeight = getRecencyWeight(counts.lastKillAt);
   const weightedThreatScore = (counts.kills + (counts.ganks * 2)) + recencyWeight;
@@ -831,6 +1046,9 @@ function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, opt
   if (!includeDeployables && counts.deployables > 0) {
     filteredBits.push(`${counts.deployables} deployable kill${counts.deployables === 1 ? '' : 's'}`);
   }
+  if (!includePadding && counts.padding > 0) {
+    filteredBits.push(`${counts.padding} padding kill${counts.padding === 1 ? '' : 's'}`);
+  }
   if (filteredBits.length) {
     notes += ` Filtered out ${filteredBits.join(' and ')}.`;
   }
@@ -848,6 +1066,12 @@ function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, opt
   }
   if (fleetSignal) {
     groupSignals.push(fleetSignal.label);
+  }
+  if (corpEntityCounts && entry.corpName) {
+    groupSignals.push(`Corporation zKill activity: ${corpEntityCounts.kills} filtered kill${corpEntityCounts.kills === 1 ? '' : 's'} and ${corpEntityCounts.ganks} gank${corpEntityCounts.ganks === 1 ? '' : 's'} in ${spaceFilter}.`);
+  }
+  if (allianceEntityCounts && entry.allianceName) {
+    groupSignals.push(`Alliance zKill activity: ${allianceEntityCounts.kills} filtered kill${allianceEntityCounts.kills === 1 ? '' : 's'} and ${allianceEntityCounts.ganks} gank${allianceEntityCounts.ganks === 1 ? '' : 's'} in ${spaceFilter}.`);
   }
 
   // Convert existing threshold-based threat logic into a 0-100 score.
@@ -878,6 +1102,25 @@ function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, opt
     groupSignals
   );
 
+  const externalIntelBits = [];
+  if (corpEntityCounts && entry.corpName) {
+    externalIntelBits.push(`Corp activity ${corpEntityCounts.kills}/${corpEntityCounts.ganks}`);
+  }
+  if (allianceEntityCounts && entry.allianceName) {
+    externalIntelBits.push(`Alliance activity ${allianceEntityCounts.kills}/${allianceEntityCounts.ganks}`);
+  }
+
+  const entityIntelPending = (
+    (entry.corpId && !corpEntityEntry) ||
+    (entry.allianceId && !allianceEntityEntry) ||
+    isEntitySummaryPending('corporation', entry.corpId) ||
+    isEntitySummaryPending('alliance', entry.allianceId)
+  );
+
+  if (externalIntelBits.length) {
+    notes += ` ${externalIntelBits.join('. ')}.`;
+  }
+
   return {
     name: entry.name,
     found: Boolean(entry.characterId),
@@ -892,11 +1135,24 @@ function summarizePilotFromCache(entry, monthsBack, thresholds, spaceFilter, opt
     activityTone: activity.tone,
     lastKillAt: counts.lastKillAt,
     corpName: entry.corpName || '',
+    corpId: entry.corpId || null,
+    corpZkillUrl: entry.corpId ? getEntityZkillUrl('corporation', entry.corpId) : '#',
+    corpActivity: corpEntityCounts ? {
+      kills: corpEntityCounts.kills,
+      ganks: corpEntityCounts.ganks
+    } : null,
     allianceName: entry.allianceName || '',
+    allianceId: entry.allianceId || null,
+    allianceZkillUrl: entry.allianceId ? getEntityZkillUrl('alliance', entry.allianceId) : '#',
+    allianceActivity: allianceEntityCounts ? {
+      kills: allianceEntityCounts.kills,
+      ganks: allianceEntityCounts.ganks
+    } : null,
     corpGroupCount,
     allianceGroupCount,
     fleetSignal: fleetSignal ? fleetSignal.shortLabel : '',
-    threatExplanation
+    threatExplanation,
+    entityIntelPending
   };
 }
 
