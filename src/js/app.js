@@ -17,7 +17,7 @@ async function collectResultsFromCurrentInputs(showProgress = true) {
   const monthsBack = Number(monthsBackEl.value);
   const thresholds = {
     highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 3),
-    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 0)
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 1)
   };
   const spaceFilter = spaceFilterEl.value;
   const filterOptions = {
@@ -164,7 +164,7 @@ function rerenderFromCacheOnly() {
   const monthsBack = Number(monthsBackEl.value);
   const thresholds = {
     highThreatKills: Math.max(1, Number(highThreatKillsEl.value) || 3),
-    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 0)
+    highThreatGanks: Math.max(0, Number(highThreatGanksEl.value) || 1)
   };
   const spaceFilter = spaceFilterEl.value;
   const filterOptions = {
