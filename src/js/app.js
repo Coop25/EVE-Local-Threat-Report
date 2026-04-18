@@ -478,5 +478,14 @@ if (!String(location.hash || '').startsWith('#scan=') && hadSavedUiState) {
   rerenderFromCacheOnly();
 }
 
+function updateControlDrawerSummary() {
+  if (!controlDrawerMetaEl) return;
+  const count = normalizeNames(namesEl.value).length;
+  const base = count ? `${count} pilot${count === 1 ? '' : 's'} loaded` : 'No pilots loaded';
+  controlDrawerMetaEl.textContent = document.body.classList.contains('control-drawer-open')
+    ? `${base} | tap to close`
+    : `${base} | tap to open`;
+}
+
 syncControlDrawerLayout();
 updateControlDrawerSummary();
